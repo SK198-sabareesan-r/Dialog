@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ── Base reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: #F0F2F5;
+  min-height: 100vh;
+  color: #1A1A1A;
+}
+
+/* ── White card ── */
+.dialog-card {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dialog-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+/* ── Page heading accent underline ── */
+.dialog-accent {
+  position: relative;
+  display: inline-block;
+}
+.dialog-accent::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 36px;
+  height: 3px;
+  background: #E91E8C;
+  border-radius: 2px;
+}
+
+/* ── Focus ring ── */
+*:focus-visible {
+  outline: 2px solid rgba(233, 30, 140, 0.4);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #F0F2F5; }
+::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #E91E8C; }
+
+/* ── Primary button (magenta) ── */
+.btn-dialog {
+  background: #E91E8C;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 10px 24px;
+  cursor: pointer;
+  transition: background 0.18s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-dialog:hover:not(:disabled) { background: #C4157A; }
+.btn-dialog:disabled { background: #E5E7EB; color: #9CA3AF; cursor: not-allowed; }
+
+/* ── Input / select ── */
+.dialog-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
+  color: #1A1A1A;
+  font-size: 0.875rem;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  outline: none;
+  font-family: inherit;
+}
+.dialog-input:focus {
+  border-color: #E91E8C;
+  box-shadow: 0 0 0 3px rgba(233,30,140,0.12);
+}
+.dialog-input::placeholder { color: #9CA3AF; }
+
+/* ── Table ── */
+.dialog-table { width: 100%; border-collapse: collapse; }
+.dialog-table thead th {
+  background: #F9FAFB;
+  color: #6B7280;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 11px 16px;
+  text-align: left;
+  border-bottom: 2px solid #E5E7EB;
+}
+.dialog-table tbody tr { border-bottom: 1px solid #F3F4F6; transition: background 0.12s; }
+.dialog-table tbody tr:hover { background: #FDF0F8; }
+.dialog-table tbody td { padding: 12px 16px; font-size: 0.875rem; color: #1A1A1A; }
+
+/* ── Sidebar nav active pill ── */
+.nav-active {
+  background: #E91E8C !important;
+  color: #FFFFFF !important;
+  border-radius: 8px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+}
+.nav-item:hover:not(.nav-active) { background: #F9FAFB; color: #1A1A1A; }
+
+/* ── Pink Badge ── */
+.badge-pink {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  background: #E91E8C;
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 20px;
+  letter-spacing: 0.02em;
+}

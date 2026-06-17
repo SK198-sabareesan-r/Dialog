@@ -1,0 +1,28 @@
+# Core Dependencies
+boto3
+python-dotenv
+pydantic
+fastapi
+uvicorn[standard]
+python-multipart
+apscheduler
+
+# Google Drive Integration
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
+# Metadata Extraction Libraries
+PyPDF2  # PDF metadata extraction
+python-docx  # DOCX metadata extraction
+python-pptx  # PPTX metadata extraction
+openpyxl  # Excel metadata extraction
+Pillow  # Image metadata (EXIF) extraction
+
+# Optional (for advanced features)
+# moviepy  # Video metadata - requires ffmpeg
+# mutagen  # Audio metadata (MP3 tags)
+
+# Data Processing
+pandas
+requests
