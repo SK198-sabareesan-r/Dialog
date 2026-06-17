@@ -42,6 +42,11 @@ class Settings:
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 
+    # JWT Configuration (for session management)
+    JWT_SECRET = os.getenv('JWT_SECRET', 'dialog-bda-pipeline-secret-change-in-production')
+    JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
+    JWT_EXPIRE_HOURS = int(os.getenv('JWT_EXPIRE_HOURS', '8'))
+
     @classmethod
     def validate(cls):
         """Validate that all required settings are present"""

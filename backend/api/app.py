@@ -19,6 +19,7 @@ from datetime import datetime
 import json
 import os
 import time
+import jwt
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -29,6 +30,7 @@ from services.metadata_extractor import metadata_extractor
 from services.kb_query_service import kb_query_service
 from services.ingestion_tracker import ingestion_tracker
 from services.file_repository_service import file_repository_service
+from services.auth_service import auth_service
 from config import settings
 from utils.logger import (
     get_logger, setup_logging, log_upload, log_query,
@@ -188,6 +190,160 @@ class FileRepoUriImportRequest(BaseModel):
     user_id: str
     team_id: Optional[str] = None
     department: Optional[str] = None
+
+
+# In-memory state storage for OAuth (production: use Redis)
+oauth_states = {}
+
+
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+@app.get("/api/auth/google-url")
+async def get_google_oauth_url():
+    """
+    Generate Google OAuth consent URL for login flow
+
+    Returns URL that opens Google consent screen requesting:
+    - openid, email, profile (for login)
+    - drive.readonly (for Drive access)
+    """
+    try:
+        # Generate CSRF protection state
+        state = auth_service.generate_state()
+
+        # PRODUCTION: Change to 'https://your-domain.com/auth-callback' before deployment
+        redirect_uri = "http://localhost:3000/auth-callback"
+
+        # Store state temporarily (production: use Redis with expiry)
+        oauth_states[state] = {
+            "created_at": datetime.utcnow().isoformat(),
+            "redirect_uri": redirect_uri
+        }
+
+        # Generate OAuth URL
+        oauth_url = auth_service.generate_google_oauth_url(
+            state=state,
+            redirect_uri=redirect_uri
+        )
+
+        logger.info(f"Generated OAuth URL with state: {state[:10]}...")
+
+        return {
+            "oauth_url": oauth_url,
+            "state": state
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to generate OAuth URL: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/auth/callback")
+async def auth_callback(
+    code: str = Query(...),
+    state: str = Query(...)
+):
+    """
+    OAuth callback handler - exchanges code for JWT token
+
+    Flow:
+    1. Validate state parameter (CSRF protection)
+    2. Exchange auth code for Google tokens
+    3. Get user info from Google
+    4. Create JWT with user info + Drive token
+    5. Return JWT to frontend
+    """
+    try:
+        # Validate state parameter
+        if state not in oauth_states:
+            logger.warning(f"Invalid state parameter: {state[:10]}...")
+            raise HTTPException(status_code=400, detail="Invalid state parameter")
+
+        redirect_uri = oauth_states[state]["redirect_uri"]
+        del oauth_states[state]  # Consume state (single use)
+
+        # Exchange authorization code for tokens
+        logger.info("Exchanging auth code for tokens...")
+        tokens = auth_service.exchange_code_for_tokens(
+            code=code,
+            redirect_uri=redirect_uri
+        )
+
+        access_token = tokens["access_token"]
+        # refresh_token = tokens.get("refresh_token")  # Store for future use
+
+        # Get user information
+        logger.info("Fetching user info from Google...")
+        user_info = auth_service.get_user_info(access_token)
+
+        # Create JWT token with embedded Drive access token
+        jwt_token = auth_service.create_jwt_token(
+            user_info=user_info,
+            drive_token=access_token
+        )
+
+        logger.info(f"User authenticated: {user_info['email']}")
+
+        return {
+            "token": jwt_token,
+            "user": {
+                "email": user_info["email"],
+                "name": user_info["name"],
+                "picture": user_info.get("picture", "")
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"OAuth callback failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/auth/me")
+async def get_current_user(authorization: Optional[str] = Query(None)):
+    """
+    Get current user info from JWT token
+
+    Requires Authorization header: Bearer {jwt_token}
+    """
+    try:
+        # Extract token from header
+        token = auth_service.extract_token_from_header(authorization)
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing authorization token")
+
+        # Verify and decode JWT
+        payload = auth_service.verify_jwt_token(token)
+
+        return {
+            "user": {
+                "id": payload["sub"],
+                "email": payload["email"],
+                "name": payload["name"],
+                "picture": payload.get("picture", "")
+            }
+        }
+
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except Exception as e:
+        logger.error(f"Get current user failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/auth/logout")
+async def logout():
+    """
+    Logout endpoint (client-side token removal confirmation)
+
+    Note: JWT tokens cannot be invalidated server-side unless we implement
+    a token blacklist. Client must remove token from storage.
+    """
+    return {"message": "Logged out successfully"}
+
 
 # ============================================================================
 # Health & Info Endpoints
@@ -446,6 +602,45 @@ async def list_shared_drives(google_access_token: str = Query(...)):
         }
     except Exception as e:
         logger.error(f"Failed to list shared drives: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/google-drive/browse")
+async def browse_drive_folder(
+    google_access_token: str = Query(...),
+    folder_id: str = Query("root", description="Folder ID to browse. Use 'root' for Drive root."),
+    drive_id: Optional[str] = Query(None, description="Shared Drive ID. Leave empty for personal My Drive")
+):
+    """
+    Browse a Google Drive folder and return folders and files separately.
+
+    Used for frontend breadcrumb navigation.
+
+    Returns:
+        {
+            "folders": [{id, name, mimeType}, ...],
+            "files": [{id, name, mimeType, size, modifiedTime}, ...]
+        }
+    """
+    try:
+        result = google_drive_service.browse_folder(
+            access_token=google_access_token,
+            folder_id=folder_id,
+            drive_id=drive_id
+        )
+        return {
+            "folder_id": folder_id,
+            "drive_type": "shared_drive" if drive_id else "personal",
+            "drive_id": drive_id,
+            "folders": result["folders"],
+            "files": result["files"],
+            "count": {
+                "folders": len(result["folders"]),
+                "files": len(result["files"])
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to browse drive folder: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

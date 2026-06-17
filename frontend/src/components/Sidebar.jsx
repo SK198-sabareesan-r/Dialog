@@ -1,57 +1,97 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import {
   Upload, Search,
   Menu, X, LogOut, ChevronRight,
 } from 'lucide-react';
 
-/* ── Dialog logo — matches screenshot: circle avatar + "Dialog / Support Portal" ── */
+/* ── Dialog logo — official logo from dialog.lk ── */
 const DialogLogoBlock = () => (
   <div className="flex items-center gap-3 px-5 py-5 border-b" style={{ borderColor: '#E8EAF0' }}>
-    {/* Circle logo */}
+    {/* Dialog official logo */}
+    <img
+      src="https://dialog.lk/themes/custom/dialog_theme/logo.svg"
+      alt="Dialog"
+      style={{ height: 28 }}
+      onError={(e) => {
+        // Fallback to circle logo if image fails to load
+        e.target.style.display = 'none';
+        e.target.nextSibling.style.display = 'flex';
+      }}
+    />
+    {/* Fallback circle logo */}
     <div
       style={{
-        width: 40, height: 40, borderRadius: '50%',
-        background: 'linear-gradient(135deg, #E91E8C 0%, #C91578 100%)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'none',
+        width: 40,
+        height: 40,
+        borderRadius: '50%',
+        background: 'linear-gradient(135deg, #E4002B 0%, #C20023 100%)',
+        alignItems: 'center',
+        justifyContent: 'center',
         flexShrink: 0,
-        boxShadow: '0 2px 8px rgba(233,30,140,0.35)',
+        boxShadow: '0 2px 8px rgba(228,0,43,0.35)',
       }}
     >
       <span style={{ color: '#FFFFFF', fontWeight: 900, fontSize: 18, lineHeight: 1, letterSpacing: '-1px' }}>
         D
       </span>
     </div>
-    <div>
-      <p style={{ fontWeight: 700, fontSize: '1rem', color: '#1A1A2E', lineHeight: 1.2 }}>Dialog</p>
-      <p style={{ fontSize: '0.72rem', color: '#9CA3AF', marginTop: 2 }}>BDA Pipeline</p>
+    <div style={{ marginLeft: 8 }}>
+      <p style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A1A2E', lineHeight: 1.2 }}>BDA Pipeline</p>
+      <p style={{ fontSize: '0.7rem', color: '#9CA3AF', marginTop: 2 }}>Knowledge Base</p>
     </div>
   </div>
 );
 
-/* ── User badge at top-right (matches screenshot) ── */
-const UserBadge = () => (
-  <div
-    className="hidden md:flex items-center gap-2 px-5 py-3 border-b"
-    style={{ borderColor: '#E8EAF0' }}
-  >
+/* ── User badge at top-right (displays authenticated user from JWT) ── */
+const UserBadge = ({ user }) => {
+  if (!user) return null;
+
+  // Extract initials from name
+  const initials = user.name
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .substring(0, 2);
+
+  return (
     <div
-      style={{
-        width: 30, height: 30, borderRadius: '50%',
-        background: '#F3F4F6',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: '1px solid #E8EAF0',
-        flexShrink: 0,
-      }}
+      className="hidden md:flex items-center gap-2 px-5 py-3 border-b"
+      style={{ borderColor: '#E8EAF0' }}
     >
-      <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>M</span>
+      {user.picture ? (
+        <img
+          src={user.picture}
+          alt={user.name}
+          style={{
+            width: 30, height: 30, borderRadius: '50%',
+            border: '1px solid #E8EAF0',
+            flexShrink: 0,
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: '#F3F4F6',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid #E8EAF0',
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>{initials}</span>
+        </div>
+      )}
+      <div className="flex-1">
+        <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1A1A2E' }}>{user.name}</p>
+        <p style={{ fontSize: '0.68rem', color: '#9CA3AF' }}>{user.email}</p>
+      </div>
     </div>
-    <div className="flex-1">
-      <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1A1A2E' }}>manager1</p>
-      <p style={{ fontSize: '0.68rem', color: '#9CA3AF' }}>Manager</p>
-    </div>
-  </div>
-);
+  );
+};
 
 const navItems = [
   { name: 'Upload',   path: '/upload',   icon: Upload  },
@@ -60,7 +100,14 @@ const navItems = [
 
 const Sidebar = () => {
   const location  = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const NavLink = ({ item, onClick }) => {
     const active = location.pathname === item.path;
@@ -71,13 +118,13 @@ const Sidebar = () => {
         onClick={onClick}
         className="flex items-center gap-3 mx-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group"
         style={{
-          background: active ? '#E91E8C' : 'transparent',
+          background: active ? '#E4002B' : 'transparent',
           color:      active ? '#FFFFFF' : '#6B7280',
         }}
         onMouseEnter={e => {
           if (!active) {
-            e.currentTarget.style.background = '#FDF0F7';
-            e.currentTarget.style.color      = '#E91E8C';
+            e.currentTarget.style.background = '#FFF5F5';
+            e.currentTarget.style.color      = '#E4002B';
           }
         }}
         onMouseLeave={e => {
@@ -102,16 +149,30 @@ const Sidebar = () => {
         style={{ background: '#FFFFFF', borderBottom: '1px solid #E8EAF0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
       >
         <div className="flex items-center gap-2.5">
+          <img
+            src="https://dialog.lk/themes/custom/dialog_theme/logo.svg"
+            alt="Dialog"
+            style={{ height: 22 }}
+            onError={(e) => {
+              // Fallback to circle logo
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'flex';
+            }}
+          />
+          {/* Fallback circle logo */}
           <div
             style={{
-              width: 32, height: 32, borderRadius: '50%',
-              background: '#E91E8C',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'none',
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              background: '#E4002B',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             <span style={{ color: '#FFF', fontWeight: 900, fontSize: 15 }}>D</span>
           </div>
-          <span style={{ fontWeight: 700, color: '#1A1A2E' }}>Dialog</span>
         </div>
         <button onClick={() => setOpen(!open)} style={{ color: '#6B7280' }}>
           {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -142,7 +203,7 @@ const Sidebar = () => {
         }}
       >
         <DialogLogoBlock />
-        <UserBadge />
+        <UserBadge user={user} />
 
         {/* Nav items */}
         <nav className="flex-1 py-4 space-y-0.5 overflow-y-auto">
@@ -154,9 +215,10 @@ const Sidebar = () => {
         {/* Logout */}
         <div className="py-4 border-t" style={{ borderColor: '#E8EAF0' }}>
           <button
+            onClick={handleLogout}
             className="flex items-center gap-3 mx-3 px-3 py-2.5 rounded-lg w-full text-sm font-medium transition-all"
             style={{ color: '#6B7280' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#FDF0F7'; e.currentTarget.style.color = '#E91E8C'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#FFF5F5'; e.currentTarget.style.color = '#E4002B'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6B7280'; }}
           >
             <LogOut className="w-4 h-4" />

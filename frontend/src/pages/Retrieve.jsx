@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8001/api';
-const PINK = '#E91E8C';
+const API_BASE = 'http://localhost:8000/api';
+const DIALOG_RED = '#E4002B';
 
 // ---------------------------------------------------------------------------
 // Markdown renderer — maps markdown elements to styled HTML
@@ -49,7 +49,7 @@ const mdComponents = {
     inline ? (
       <code
         className="px-1.5 py-0.5 rounded text-xs font-mono"
-        style={{ background: '#F3F4F6', color: '#E91E8C' }}
+        style={{ background: '#F3F4F6', color: DIALOG_RED }}
       >
         {children}
       </code>
@@ -64,7 +64,7 @@ const mdComponents = {
   blockquote: ({ children }) => (
     <blockquote
       className="border-l-4 pl-3 my-2 text-sm italic"
-      style={{ borderColor: PINK, color: '#6B7280' }}
+      style={{ borderColor: DIALOG_RED, color: '#6B7280' }}
     >
       {children}
     </blockquote>
@@ -97,7 +97,7 @@ const mdComponents = {
       target="_blank"
       rel="noopener noreferrer"
       className="underline text-sm"
-      style={{ color: PINK }}
+      style={{ color: DIALOG_RED }}
     >
       {children}
     </a>
@@ -113,8 +113,8 @@ const PageHeader = ({ title, subtitle }) => (
     style={{ borderColor: '#E8EAF0' }}
   >
     <div>
-      <h1 className="text-lg font-semibold" style={{ color: '#1A1A2E' }}>{title}</h1>
-      {subtitle && <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>{subtitle}</p>}
+      <h1 className="text-xl font-semibold" style={{ color: '#1F2937' }}>{title}</h1>
+      {subtitle && <p className="text-sm mt-0.5" style={{ color: '#9CA3AF' }}>{subtitle}</p>}
     </div>
   </div>
 );
@@ -149,13 +149,13 @@ const AnswerCard = ({ answer, answerEnglish, retrieval, language, citations }) =
 
   return (
     <div
-      className="dialog-card p-5 mb-4"
-      style={{ borderLeft: `4px solid ${PINK}`, background: '#FDFAFE' }}
+      className="bg-white rounded-xl shadow-sm p-5 mb-4"
+      style={{ borderLeft: `4px solid ${DIALOG_RED}`, background: '#FFF5F5' }}
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
-        <Sparkles className="w-4 h-4 flex-shrink-0" style={{ color: PINK }} />
-        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: PINK }}>
+        <Sparkles className="w-4 h-4 flex-shrink-0" style={{ color: DIALOG_RED }} />
+        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: DIALOG_RED }}>
           AI Answer
         </span>
         <div className="ml-auto flex items-center gap-2">
@@ -164,9 +164,9 @@ const AnswerCard = ({ answer, answerEnglish, retrieval, language, citations }) =
               onClick={() => setShowEnglish(!showEnglish)}
               className="text-xs px-2 py-0.5 rounded-full font-medium transition-colors"
               style={{
-                background: showEnglish ? '#F3F4F6' : `${PINK}18`,
-                color: showEnglish ? '#6B7280' : PINK,
-                border: `1px solid ${showEnglish ? '#E5E7EB' : `${PINK}40`}`,
+                background: showEnglish ? '#F3F4F6' : `${DIALOG_RED}18`,
+                color: showEnglish ? '#6B7280' : DIALOG_RED,
+                border: `1px solid ${showEnglish ? '#E5E7EB' : `${DIALOG_RED}40`}`,
               }}
             >
               {showEnglish ? `Show ${language.name}` : 'Show English'}
@@ -211,7 +211,7 @@ const AnswerCard = ({ answer, answerEnglish, retrieval, language, citations }) =
                       color: '#374151'
                     }}
                   >
-                    <span className="font-semibold" style={{ color: PINK }}>[{idx + 1}]</span>
+                    <span className="font-semibold" style={{ color: DIALOG_RED }}>[{idx + 1}]</span>
                     {doc}
                   </span>
                 ))}
@@ -272,7 +272,7 @@ const ResultCard = ({ result, index }) => {
             <button
               onClick={() => setExpanded(!expanded)}
               className="flex items-center gap-1 text-xs font-medium mt-1.5"
-              style={{ color: PINK }}
+              style={{ color: DIALOG_RED }}
             >
               {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               {expanded ? 'Show less' : 'Show more'}
@@ -306,7 +306,7 @@ const CitedChunks = ({ results }) => {
   if (!results || results.length === 0) return null;
 
   return (
-    <div className="dialog-card overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-5 py-3 text-left"
@@ -389,9 +389,9 @@ const Retrieve = () => {
   const noContent  = results && !hasAnswer && !hasChunks;
 
   return (
-    <div className="min-h-screen pb-8">
+    <div className="min-h-screen bg-gray-50 pb-8">
       <PageHeader
-        title="Search Knowledge Base"
+        title="Retrieve Documents"
         subtitle="Ask anything — hybrid search with AI-generated answers"
       />
 
@@ -399,21 +399,24 @@ const Retrieve = () => {
         <div className="max-w-4xl mx-auto">
 
           {/* ── Search bar ─────────────────────────────────────────────── */}
-          <div className="dialog-card p-5 mb-6">
+          <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
             <div className="flex gap-3">
               <div className="relative flex-1">
                 <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                  style={{ color: '#C4C9D4', zIndex: 1 }}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none"
+                  style={{ color: '#9CA3AF', zIndex: 1 }}
                 />
                 <input
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={onKeyDown}
-                  placeholder="Ask a question or enter keywords..."
-                  className="dialog-input w-full"
-                  style={{ paddingLeft: '2.25rem' }}
+                  placeholder="Ask a question or search for documents..."
+                  className="w-full px-4 py-3 pl-11 border rounded-lg focus:outline-none focus:ring-2 transition-all"
+                  style={{
+                    borderColor: '#E5E7EB',
+                    focusRingColor: DIALOG_RED
+                  }}
                   disabled={searching}
                   aria-label="Search query"
                   autoFocus
@@ -422,12 +425,16 @@ const Retrieve = () => {
               <button
                 onClick={handleSearch}
                 disabled={searching || !query.trim()}
-                className="btn-dialog px-6 py-2.5 text-sm whitespace-nowrap"
+                className="px-6 py-3 rounded-lg font-semibold text-white flex items-center gap-2 transition-all"
+                style={{
+                  background: (searching || !query.trim()) ? '#CBD5E0' : DIALOG_RED,
+                  cursor: (searching || !query.trim()) ? 'not-allowed' : 'pointer'
+                }}
                 aria-label="Search knowledge base"
               >
                 {searching
-                  ? <Loader className="w-4 h-4 animate-spin" />
-                  : <><Search className="w-4 h-4" />Search</>
+                  ? <Loader className="w-5 h-5 animate-spin" />
+                  : <><Search className="w-5 h-5" />Search</>
                 }
               </button>
             </div>
@@ -436,7 +443,7 @@ const Retrieve = () => {
           {/* ── Error ──────────────────────────────────────────────────── */}
           {error && (
             <div
-              className="dialog-card p-4 mb-6 flex items-start gap-3"
+              className="bg-white rounded-xl shadow-sm p-4 mb-6 flex items-start gap-3"
               style={{ borderLeft: '4px solid #DC2626' }}
             >
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#DC2626' }} />
@@ -488,7 +495,7 @@ const Retrieve = () => {
 
               {/* Only show "no results" when there is truly nothing at all */}
               {noContent && (
-                <div className="dialog-card p-12 text-center">
+                <div className="bg-white rounded-xl shadow-sm p-12 text-center">
                   <FileText className="w-10 h-10 mx-auto mb-4 opacity-20" style={{ color: '#9CA3AF' }} />
                   <p className="text-sm font-semibold mb-1" style={{ color: '#1A1A2E' }}>No results found</p>
                   <p className="text-xs" style={{ color: '#9CA3AF' }}>

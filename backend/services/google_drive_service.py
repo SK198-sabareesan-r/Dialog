@@ -112,6 +112,88 @@ class GoogleDriveService:
             raise
 
     # ------------------------------------------------------------------
+    # Folder browsing (for UI navigation)
+    # ------------------------------------------------------------------
+
+    def browse_folder(
+        self,
+        access_token: str,
+        folder_id: str = "root",
+        drive_id: Optional[str] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Browse a folder and return separate lists of folders and files.
+
+        Used for frontend breadcrumb navigation in the Drive browser UI.
+
+        Args:
+            access_token: User's Google access token
+            folder_id:    Folder ID to browse (default: "root" for Drive root)
+            drive_id:     Shared Drive ID (None = personal My Drive)
+
+        Returns:
+            {
+                "folders": [{id, name, mimeType}, ...],
+                "files": [{id, name, mimeType, size, modifiedTime}, ...]
+            }
+        """
+        try:
+            service = self._get_service(access_token)
+
+            # Build query to get items in this folder
+            query = f"'{folder_id}' in parents and trashed=false"
+
+            params = {
+                'q': query,
+                'pageSize': 1000,
+                'fields': "files(id, name, mimeType, size, modifiedTime, iconLink)",
+                'orderBy': 'folder,name',  # Folders first, then files
+                'supportsAllDrives': True,
+                'includeItemsFromAllDrives': True,
+            }
+
+            if drive_id:
+                params['driveId'] = drive_id
+                params['corpora'] = 'drive'
+            else:
+                params['corpora'] = 'user'
+
+            results = service.files().list(**params).execute()
+            items = results.get('files', [])
+
+            # Separate folders and files
+            folders = []
+            files = []
+
+            for item in items:
+                if item['mimeType'] == 'application/vnd.google-apps.folder':
+                    folders.append({
+                        'id': item['id'],
+                        'name': item['name'],
+                        'mimeType': item['mimeType']
+                    })
+                else:
+                    files.append({
+                        'id': item['id'],
+                        'name': item['name'],
+                        'mimeType': item['mimeType'],
+                        'size': item.get('size', '0'),
+                        'modifiedTime': item.get('modifiedTime', ''),
+                        'iconLink': item.get('iconLink', '')
+                    })
+
+            logger.info(f"Browsed folder {folder_id}: {len(folders)} folders, {len(files)} files")
+
+            return {
+                "folders": folders,
+                "files": files
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to browse folder: {str(e)}")
+            raise
+
+    # ------------------------------------------------------------------
     # File download
     # ------------------------------------------------------------------
 
