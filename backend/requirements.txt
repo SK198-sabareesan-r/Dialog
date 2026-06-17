@@ -5,7 +5,9 @@ pydantic
 fastapi
 uvicorn[standard]
 python-multipart
-apscheduler
+apscheduler>=3.10.0
+tzlocal>=4.0,<6.0
+pytz
 
 # Google Drive Integration
 google-api-python-client

@@ -50,6 +50,12 @@ class UploadService:
         timestamp = datetime.utcnow().strftime('%Y/%m/%d/%H%M%S')
         s3_key = f"users/{user_id}/{timestamp}/{file_name}"
 
+        # Sanitize metadata to ASCII (S3 requirement)
+        ascii_metadata = {
+            k: str(v).encode('ascii', errors='replace').decode('ascii')
+            for k, v in custom_metadata.items()
+        }
+
         try:
             # Generate pre-signed URL
             url = self.s3_client.generate_presigned_url(
@@ -58,7 +64,7 @@ class UploadService:
                     'Bucket': self.bucket,
                     'Key': s3_key,
                     'ContentType': file_type,
-                    'Metadata': custom_metadata
+                    'Metadata': ascii_metadata
                 },
                 ExpiresIn=expires_in
             )
@@ -92,12 +98,15 @@ class UploadService:
         s3_key = f"users/{user_id}/{timestamp}/{file_name}"
 
         # Convert all metadata values to strings (S3 requirement)
+        # S3 metadata keys and values must be ASCII only — strip/replace non-ASCII chars
         string_metadata = {}
         for key, value in metadata.items():
             if isinstance(value, (dict, list)):
-                string_metadata[key] = json.dumps(value)
+                raw = json.dumps(value)
             else:
-                string_metadata[key] = str(value)
+                raw = str(value)
+            # Encode to ASCII, replacing any non-ASCII characters with '?'
+            string_metadata[key] = raw.encode('ascii', errors='replace').decode('ascii')
 
         try:
             self.s3_client.put_object(
@@ -114,14 +123,22 @@ class UploadService:
             head = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
             etag = head["ETag"].strip('"')
 
-            # Record in ingestion tracker so incremental sync skips this file
-            # if it hasn't changed since last upload
+            # Trigger Bedrock KB sync immediately so the new file is ingested
+            try:
+                sync_result = self.trigger_kb_sync()
+                logger.info(f"KB sync triggered after upload: job={sync_result['ingestion_job_id']}")
+            except Exception as sync_err:
+                logger.warning(f"KB sync trigger failed after upload (file is in S3): {sync_err}")
+                sync_result = {}
+
+            # Record in ingestion tracker AFTER triggering sync
             ingestion_tracker.record_ingested(s3_key, etag)
 
             return {
                 's3_key': s3_key,
                 's3_uri': f"s3://{self.bucket}/{s3_key}",
-                'metadata': string_metadata
+                'metadata': string_metadata,
+                'ingestion_job_id': sync_result.get('ingestion_job_id')
             }
 
         except Exception as e:

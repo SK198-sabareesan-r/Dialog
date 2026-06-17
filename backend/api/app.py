@@ -3,6 +3,13 @@ Complete Knowledge Base API with Automatic Metadata Extraction
 Direct S3 → Bedrock KB flow with metadata enrichment
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import services, config, etc.
+backend_root = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_root))
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -371,14 +378,15 @@ async def upload_direct(
         return JSONResponse(
             status_code=202,
             content={
-                "message": "File uploaded successfully",
+                "message": "File uploaded and KB sync started",
                 "s3_key": result['s3_key'],
                 "s3_uri": result['s3_uri'],
+                "ingestion_job_id": result.get('ingestion_job_id'),
                 "metadata": {
                     "extracted": extracted_metadata,
                     "custom": custom_metadata
                 },
-                "note": "Bedrock KB will auto-sync and process this file"
+                "note": "Bedrock KB ingestion job started — document will be queryable in ~1-2 minutes"
             }
         )
 

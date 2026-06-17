@@ -121,12 +121,15 @@ const Upload = () => {
       const form = new FormData();
       form.append('file', file);
 
-      const res = await axios.post(`${API_BASE}/ingest/upload`, form, {
-        params: {
-          source: sourceType,
-          user_id: userId.trim() || undefined,
-          team_id: teamId.trim() || undefined,
-        },
+      // user_id is required by backend
+      form.append('user_id', userId.trim() || 'guest');
+
+      // Add optional fields
+      if (teamId.trim()) {
+        form.append('team_id', teamId.trim());
+      }
+
+      const res = await axios.post(`${API_BASE}/upload/direct`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000, // 60 second timeout
         onUploadProgress: (progressEvent) => {
