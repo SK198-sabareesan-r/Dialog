@@ -64,8 +64,9 @@ class UploadService:
         Returns as soon as the S3 PUT completes — KB sync is NOT started here.
         The caller is responsible for scheduling background_sync().
         """
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        s3_key    = f"docs/{user_id}/{timestamp}_{file_name}"
+        # Store all files in docs folder without timestamp
+        # This allows ETag tracking to detect file updates
+        s3_key = f"docs/{file_name}"
 
         # Sanitise metadata values → ASCII strings (S3 header requirement)
         string_metadata: Dict[str, str] = {}

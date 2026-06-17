@@ -91,17 +91,22 @@ class KBQueryService:
                         'generationConfiguration': {
                             'promptTemplate': {
                                 'textPromptTemplate': (
-                                    'You are a helpful knowledge assistant. '
-                                    'Use only the retrieved context below to answer the question. '
-                                    'Be concise and accurate. '
-                                    'If the context does not contain enough information, say so.\n\n'
-                                    'Formatting rules:\n'
-                                    '- Use numbered lists (1. 2. 3.) for sequential steps.\n'
-                                    '- Use bullet points (-) for non-sequential items.\n'
-                                    '- Use **bold** for step titles and important terms.\n'
-                                    '- Keep each numbered list item on a single line.\n\n'
+                                    'You are a knowledge base assistant. Your ONLY job is to answer questions using EXCLUSIVELY the information provided in the search results below.\n\n'
+                                    'CRITICAL RULES:\n'
+                                    '1. ONLY use information from the search results below - DO NOT use your general knowledge\n'
+                                    '2. If the search results DO NOT contain the answer, you MUST respond EXACTLY with: "I cannot find this information in the available documents."\n'
+                                    '3. DO NOT make assumptions or infer information not explicitly stated in the search results\n'
+                                    '4. DO NOT provide general knowledge answers - ONLY answer from the search results\n'
+                                    '5. If the search results are empty or irrelevant, say you cannot find the information\n\n'
+                                    'Formatting rules (when answering from search results):\n'
+                                    '- Use numbered lists (1. 2. 3.) for sequential steps\n'
+                                    '- Use bullet points (-) for non-sequential items\n'
+                                    '- Use **bold** for important terms\n'
+                                    '- Be concise and direct\n\n'
+                                    'Search Results:\n'
                                     '$search_results$\n\n'
-                                    'Question: $query$'
+                                    'Question: $query$\n\n'
+                                    'Answer (ONLY from search results above):'
                                 )
                             },
                         },
@@ -211,6 +216,12 @@ class KBQueryService:
         """
         seen_uris: set = set()
         chunks = []
+
+        # Debug: Log the structure we're receiving
+        logger.debug(f"DEBUG: Processing {len(raw_citations)} citation blocks")
+        for i, citation in enumerate(raw_citations):
+            logger.debug(f"DEBUG: Citation {i} keys: {citation.keys()}")
+            logger.debug(f"DEBUG: Citation {i} full structure: {citation}")
 
         for citation in raw_citations:
             for ref in citation.get('retrievedReferences', []):
