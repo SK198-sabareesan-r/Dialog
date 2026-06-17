@@ -28,6 +28,16 @@ class Settings:
     BEDROCK_DATA_SOURCE_ID = os.getenv('BEDROCK_DATA_SOURCE_ID')
     BEDROCK_EMBEDDING_MODEL = os.getenv('BEDROCK_EMBEDDING_MODEL', 'amazon.titan-embed-text-v1')
 
+    # Bedrock generation model for retrieve-and-generate
+    # Claude Sonnet 4.5 via global inference profile
+    BEDROCK_GENERATION_MODEL_ARN = os.getenv(
+        'BEDROCK_GENERATION_MODEL_ARN',
+        'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+    )
+
+    # Retrieval settings
+    KB_NUM_RESULTS = int(os.getenv('KB_NUM_RESULTS', '10'))   # chunks to retrieve
+
     # Google Drive Integration (OPTIONAL)
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Upload, Search, Activity,
+  Upload, Search,
   Menu, X, LogOut, ChevronRight,
 } from 'lucide-react';
 
@@ -54,10 +54,8 @@ const UserBadge = () => (
 );
 
 const navItems = [
-  { name: 'Dashboard',  path: '/',           icon: LayoutDashboard },
-  { name: 'Upload',     path: '/upload',      icon: Upload          },
-  { name: 'Retrieve',   path: '/retrieve',    icon: Search          },
-  { name: 'Monitoring', path: '/monitoring',  icon: Activity        },
+  { name: 'Upload',   path: '/upload',   icon: Upload  },
+  { name: 'Retrieve', path: '/retrieve', icon: Search  },
 ];
 
 const Sidebar = () => {

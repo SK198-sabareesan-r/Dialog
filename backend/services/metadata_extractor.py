@@ -29,10 +29,15 @@ class MetadataExtractor:
             'image/jpeg': self._extract_image_metadata,
             'image/jpg': self._extract_image_metadata,
             'image/png': self._extract_image_metadata,
-            'video/mp4': self._extract_video_metadata,
-            'video/x-msvideo': self._extract_video_metadata,
+            # Video — all variants route to the same extractor
+            'video/mp4':        self._extract_video_metadata,
+            'video/x-msvideo':  self._extract_video_metadata,  # AVI
+            'video/quicktime':  self._extract_video_metadata,  # MOV
+            'video/x-matroska': self._extract_video_metadata,  # MKV
+            'video/webm':       self._extract_video_metadata,
+            # Audio
             'audio/mpeg': self._extract_audio_metadata,
-            'audio/wav': self._extract_audio_metadata,
+            'audio/wav':  self._extract_audio_metadata,
         }
 
     def extract_metadata(
@@ -312,24 +317,38 @@ class MetadataExtractor:
             return {'document_type': 'image', 'extraction_error': str(e)}
 
     def _extract_video_metadata(self, file_content: bytes, filename: str) -> Dict[str, Any]:
-        """Extract basic video metadata"""
-        # Note: Full video metadata extraction requires ffmpeg/moviepy
-        # For now, return basic info. Bedrock KB will extract transcript.
+        """
+        Extract basic video metadata.
+
+        Full transcription is handled asynchronously by Bedrock Data Automation (BDA)
+        after the file lands in S3 and the KB incremental sync triggers.
+        """
+        file_ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'unknown'
         metadata = {
             'document_type': 'video',
-            'extraction_note': 'Video transcription handled by Bedrock KB BDA'
+            'video_format': file_ext,
+            'processor': 'bda',
+            'processing_note': 'Stored to S3. BDA will extract audio transcript and index into KB.',
         }
 
         try:
-            # Optional: Use moviepy for detailed metadata
-            # This requires ffmpeg to be installed
+            # Optional: Use moviepy for detailed metadata if ffmpeg is available.
+            # Uncomment the lines below if moviepy + ffmpeg are installed:
+            # import tempfile, os
             # from moviepy.editor import VideoFileClip
-            # clip = VideoFileClip(io.BytesIO(file_content))
-            # metadata['duration'] = clip.duration
-            # metadata['fps'] = clip.fps
-            # metadata['size'] = clip.size
+            # with tempfile.NamedTemporaryFile(suffix=f'.{file_ext}', delete=False) as tmp:
+            #     tmp.write(file_content)
+            #     tmp_path = tmp.name
+            # try:
+            #     clip = VideoFileClip(tmp_path)
+            #     metadata['duration_seconds'] = round(clip.duration, 2)
+            #     metadata['fps'] = clip.fps
+            #     metadata['resolution'] = f"{clip.w}x{clip.h}"
+            #     clip.close()
+            # finally:
+            #     os.unlink(tmp_path)
             pass
-        except:
+        except Exception:
             pass
 
         return metadata

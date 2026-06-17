@@ -41,9 +41,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             except:
                 pass
 
-        # Log request
+        # Log request with detailed info
+        query_params = dict(request.query_params) if request.query_params else {}
+        headers = dict(request.headers)
+
         logger.info(
-            f"→ {method} {path}",
+            f"→ {method} {path} from {client_host}",
             extra={
                 'extra_data': {
                     'type': 'request_start',
@@ -51,10 +54,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     'path': path,
                     'client_host': client_host,
                     'user_agent': user_agent,
-                    'user_id': user_id
+                    'user_id': user_id,
+                    'query_params': query_params
                 }
             }
         )
+
+        # DEBUG level: log headers (excluding sensitive ones)
+        safe_headers = {k: v for k, v in headers.items() if k.lower() not in ['authorization', 'cookie', 'x-api-key']}
+        logger.debug(f"Request headers: {safe_headers}")
+        if query_params:
+            logger.debug(f"Query params: {query_params}")
 
         # Process request
         try:

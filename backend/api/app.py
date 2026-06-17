@@ -10,7 +10,7 @@ from pathlib import Path
 backend_root = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_root))
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -82,6 +82,14 @@ app = FastAPI(
     version="3.0.0"
 )
 
+# ============================================================================
+# File size limit — 500MB to accommodate video uploads
+# Run uvicorn with --limit-max-requests or set in gunicorn config.
+# For development: uvicorn api.app:app --host 0.0.0.0 --port 8000
+# The limit below is enforced at the application layer for multipart uploads.
+# ============================================================================
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))  # 500MB default
+
 # Add logging middleware BEFORE CORS
 app.add_middleware(LoggingMiddleware)
 
@@ -133,14 +141,6 @@ app.add_middleware(
 # Request/Response Models
 # ============================================================================
 
-class PreSignedUrlRequest(BaseModel):
-    file_name: str
-    file_type: str
-    user_id: str
-    team_id: Optional[str] = None
-    department: Optional[str] = None
-    tags: Optional[List[str]] = None
-
 class GoogleDriveImportRequest(BaseModel):
     files: List[Dict[str, Any]]  # [{id, name, mimeType}, ...]
     google_access_token: str
@@ -151,7 +151,7 @@ class GoogleDriveImportRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str
-    user_id: str
+    user_id: Optional[str] = None   # optional — omit to search across all documents
     team_id: Optional[str] = None
     max_results: int = 10
 
@@ -254,51 +254,9 @@ async def get_supported_formats():
 # Upload Endpoints (Web UI)
 # ============================================================================
 
-@app.post("/api/upload/get-presigned-url")
-async def get_presigned_url(request: PreSignedUrlRequest):
-    """
-    Generate pre-signed URL for direct S3 upload from frontend
-
-    This allows frontend to upload directly to S3 without going through backend,
-    which is more efficient for large files.
-    """
-    try:
-        # Extract custom metadata from request
-        custom_metadata = {
-            'user_id': request.user_id,
-            'source': 'web_ui',
-            'filename': request.file_name,
-            'upload_date': datetime.utcnow().isoformat()
-        }
-
-        if request.team_id:
-            custom_metadata['team_id'] = request.team_id
-        if request.department:
-            custom_metadata['department'] = request.department
-        if request.tags:
-            custom_metadata['tags'] = ','.join(request.tags)
-
-        # Generate pre-signed URL
-        result = upload_service.generate_presigned_url(
-            file_name=request.file_name,
-            file_type=request.file_type,
-            user_id=request.user_id,
-            custom_metadata=custom_metadata
-        )
-
-        return {
-            "upload_url": result['upload_url'],
-            "s3_key": result['s3_key'],
-            "expires_in": 3600,
-            "note": "Upload file to this URL using PUT request. Bedrock KB will auto-sync and extract metadata."
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to generate presigned URL: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/upload/direct")
 async def upload_direct(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user_id: str = Form(...),
     team_id: Optional[str] = Form(None),
@@ -306,27 +264,49 @@ async def upload_direct(
     tags: Optional[str] = Form(None)  # Comma-separated
 ):
     """
-    Direct file upload through backend
+    Direct file upload through backend.
 
-    Includes automatic metadata extraction from the file itself.
+    Returns HTTP 202 immediately after the file is stored in S3.
+    KB ingestion (sync + polling) runs in a background task so the
+    HTTP response is never blocked — safe behind any API gateway.
+
+    Poll  GET /api/upload/sync-status/{job_id}  for ingestion progress.
     """
     start_time = time.time()
+
+    VIDEO_MIME_MAP = {
+        'mp4':  'video/mp4',
+        'avi':  'video/x-msvideo',
+        'mov':  'video/quicktime',
+        'mkv':  'video/x-matroska',
+        'webm': 'video/webm',
+    }
 
     try:
         logger.info(f"Uploading file: {file.filename} for user: {user_id}")
 
-        # Read file content
         file_content = await file.read()
-        file_size = len(file_content)
+        file_size    = len(file_content)
 
-        # Extract metadata from file (AUTOMATIC)
+        if file_size > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large: {file_size / (1024*1024):.1f}MB exceeds the {MAX_UPLOAD_BYTES // (1024*1024)}MB limit"
+            )
+
+        # Normalise content type for video files
+        content_type = file.content_type or 'application/octet-stream'
+        file_ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+        if content_type in ('application/octet-stream', '') and file_ext in VIDEO_MIME_MAP:
+            content_type = VIDEO_MIME_MAP[file_ext]
+            logger.info(f"Normalised content type for {file.filename}: {content_type}")
+
+        # Extract metadata
         extracted_metadata = metadata_extractor.extract_metadata(
             file_content=file_content,
             filename=file.filename,
-            content_type=file.content_type
+            content_type=content_type
         )
-
-        # Log metadata extraction
         log_metadata_extraction(
             logger=logger,
             filename=file.filename,
@@ -334,15 +314,14 @@ async def upload_direct(
             success=True
         )
 
-        # Combine with custom metadata
+        # Build combined metadata
         custom_metadata = {
-            'user_id': user_id,
-            'source': 'web_ui',
+            'user_id':     user_id,
+            'source':      'web_ui',
             'upload_date': datetime.utcnow().isoformat(),
-            'filename': file.filename,
-            'size': str(len(file_content))
+            'filename':    file.filename,
+            'size':        str(file_size),
         }
-
         if team_id:
             custom_metadata['team_id'] = team_id
         if department:
@@ -350,18 +329,23 @@ async def upload_direct(
         if tags:
             custom_metadata['tags'] = tags
 
-        # Merge extracted and custom metadata
         all_metadata = {**extracted_metadata, **custom_metadata}
 
-        # Upload to S3 with metadata
+        # ── Store file in S3 (blocking — but fast, just a network PUT) ──
         result = upload_service.upload_to_s3(
             file_content=file_content,
             file_name=file.filename,
             user_id=user_id,
-            metadata=all_metadata
+            metadata=all_metadata,
         )
 
-        # Log successful upload
+        # ── Schedule KB sync as background task — returns BEFORE sync ───
+        background_tasks.add_task(
+            upload_service.background_sync,
+            s3_key=result['s3_key'],
+            filename=file.filename,
+        )
+
         duration_ms = round((time.time() - start_time) * 1000, 2)
         log_upload(
             logger=logger,
@@ -370,28 +354,30 @@ async def upload_direct(
             file_size=file_size,
             source='web_ui',
             success=True,
-            s3_key=result['s3_key']
+            s3_key=result['s3_key'],
         )
-
-        logger.info(f"Upload completed in {duration_ms}ms - S3: {result['s3_key']}")
+        logger.info(f"Upload endpoint completed in {duration_ms}ms — KB sync running in background")
 
         return JSONResponse(
             status_code=202,
             content={
-                "message": "File uploaded and KB sync started",
-                "s3_key": result['s3_key'],
-                "s3_uri": result['s3_uri'],
-                "ingestion_job_id": result.get('ingestion_job_id'),
+                "message":         "File uploaded — KB ingestion running in background",
+                "s3_key":          result['s3_key'],
+                "s3_uri":          result['s3_uri'],
+                "filename":        file.filename,
+                "size_bytes":      file_size,
                 "metadata": {
                     "extracted": extracted_metadata,
-                    "custom": custom_metadata
+                    "custom":    custom_metadata,
                 },
-                "note": "Bedrock KB ingestion job started — document will be queryable in ~1-2 minutes"
+                "note": "Poll /api/upload/sync-status/<job_id> for ingestion progress. "
+                        "The job_id is available in the backend logs under 'kb_sync_triggered'.",
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log failed upload
         log_upload(
             logger=logger,
             filename=file.filename,
@@ -399,9 +385,44 @@ async def upload_direct(
             file_size=len(file_content) if 'file_content' in locals() else 0,
             source='web_ui',
             success=False,
-            error=str(e)
+            error=str(e),
         )
         logger.error(f"Upload failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/upload/sync-status/{job_id}")
+async def get_upload_sync_status(job_id: str):
+    """
+    Poll the status of a KB ingestion job started by an upload.
+
+    Returns the current job status and statistics.
+    Call this endpoint periodically after uploading to track ingestion progress.
+
+    Possible status values:
+      STARTING    — job accepted, not yet running
+      IN_PROGRESS — Bedrock is actively chunking / embedding
+      COMPLETE    — document indexed and queryable
+      FAILED      — ingestion failed (check failure_reasons)
+      STOPPED     — job was stopped manually
+    """
+    try:
+        status = upload_service.get_sync_status(job_id)
+        stats  = status.get('statistics', {})
+        return {
+            "ingestion_job_id":           status['ingestion_job_id'],
+            "status":                     status['status'],
+            "started_at":                 str(status.get('started_at', '')),
+            "completed_at":               str(status.get('completed_at', '')),
+            "documents_scanned":          stats.get('numberOfDocumentsScanned', 0),
+            "new_documents_indexed":      stats.get('numberOfNewDocumentsIndexed', 0),
+            "modified_documents_indexed": stats.get('numberOfModifiedDocumentsIndexed', 0),
+            "documents_failed":           stats.get('numberOfDocumentsFailed', 0),
+            "failure_reasons":            status.get('failure_reasons', []),
+            "queryable":                  status['status'] == 'COMPLETE',
+        }
+    except Exception as e:
+        logger.error(f"Failed to get sync status for job {job_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
@@ -708,6 +729,37 @@ async def sync_knowledge_base(request: SyncRequest):
         logger.error(f"KB sync failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/kb/sync/latest")
+async def get_latest_sync_job():
+    """
+    Return the most recently started KB ingestion job.
+    Used by the frontend SyncStatusCard to track background ingestion progress.
+    """
+    try:
+        response = upload_service.bedrock_agent_client.list_ingestion_jobs(
+            knowledgeBaseId=settings.BEDROCK_KB_ID,
+            dataSourceId=settings.BEDROCK_DATA_SOURCE_ID,
+            sortBy={'attribute': 'STARTED_AT', 'order': 'DESCENDING'},
+            maxResults=1,
+        )
+        jobs = response.get('ingestionJobSummaries', [])
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No ingestion jobs found")
+
+        job = jobs[0]
+        return {
+            "ingestion_job_id": job['ingestionJobId'],
+            "status":           job['status'],
+            "started_at":       str(job.get('startedAt', '')),
+            "updated_at":       str(job.get('updatedAt', '')),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get latest sync job: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/kb/sync/status/{job_id}")
 async def get_sync_status(job_id: str):
     """Get status of KB sync job"""
@@ -800,15 +852,16 @@ async def get_tracker_stats():
         logger.error(f"Failed to get tracker stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/retrieve")
 @app.post("/api/kb/query")
 async def query_knowledge_base(request: QueryRequest):
     """
-    Query the knowledge base with multilingual support.
+    Hybrid search + retrieve-and-generate against Bedrock Knowledge Base.
 
+    - HYBRID search (vector + keyword BM25), 10 chunks
+    - Claude Sonnet 4.5 generates a summarised answer with citations
     - Auto-detects query language (English, Sinhala, Tamil)
-    - Translates query to English for KB search
-    - Translates results back to the user's language
-    - Applies metadata-based access control
+    - Translates query → English for retrieval, answer → original language
     """
     start_time = time.time()
 
@@ -817,30 +870,27 @@ async def query_knowledge_base(request: QueryRequest):
             query=request.query,
             user_id=request.user_id,
             team_id=request.team_id,
-            max_results=request.max_results
+            max_results=request.max_results,
         )
 
         duration_ms = round((time.time() - start_time) * 1000, 2)
 
-        # Log query
         log_query(
             logger=logger,
             query=request.query,
             user_id=request.user_id,
-            results_count=len(result['results']),
+            results_count=result['results_count'],
             duration_ms=duration_ms,
-            filters={'team_id': request.team_id}
+            filters={'team_id': request.team_id},
         )
 
         return {
             "query": request.query,
-            "results_count": len(result['results']),
-            "results": result['results'],
+            "answer": result['answer'],                  # LLM-generated summary
+            "results_count": result['results_count'],
+            "results": result['results'],                # cited chunks
             "language": result['language'],
-            "metadata_used": {
-                "user_id": request.user_id,
-                "team_id": request.team_id
-            }
+            "retrieval": result['retrieval'],            # search_type, chunks, model
         }
 
     except Exception as e:

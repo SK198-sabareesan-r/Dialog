@@ -1,6 +1,11 @@
 """
-Knowledge Base Query Service - Query Bedrock KB with metadata filtering
-and automatic multilingual support (English, Sinhala, Tamil).
+Knowledge Base Query Service - Hybrid search + retrieve-and-generate
+using Bedrock Knowledge Base with Claude Sonnet 4.5.
+
+Search type : HYBRID  (vector similarity + keyword BM25)
+Chunks      : 10 (configurable via KB_NUM_RESULTS)
+Generation  : anthropic.claude-sonnet-4-5
+Languages   : English, Sinhala (si), Tamil (ta)
 """
 
 import boto3
@@ -11,211 +16,231 @@ from .translation_service import translation_service, SUPPORTED_LANGUAGES
 
 logger = get_logger(__name__)
 
+
 class KBQueryService:
-    """Service for querying Bedrock Knowledge Base"""
+    """Hybrid-search retrieve-and-generate against Bedrock Knowledge Base."""
 
     def __init__(self):
-        # Build AWS credentials dict (supports SSO session tokens)
         aws_credentials = {
             'region_name': settings.AWS_REGION,
             'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
-            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY,
         }
-
-        # Add session token if present (for SSO/temporary credentials)
         if settings.AWS_SESSION_TOKEN:
             aws_credentials['aws_session_token'] = settings.AWS_SESSION_TOKEN
 
         self.bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', **aws_credentials)
         self.kb_id = settings.BEDROCK_KB_ID
+        self.model_arn = settings.BEDROCK_GENERATION_MODEL_ARN
+        self.num_results = settings.KB_NUM_RESULTS  # 10 chunks
+
+    # ------------------------------------------------------------------
+    # Primary method — called by /api/retrieve
+    # ------------------------------------------------------------------
 
     def query(
         self,
         query: str,
-        user_id: str,
+        user_id: Optional[str] = None,
         team_id: Optional[str] = None,
-        max_results: int = 10
+        max_results: int = None,        # falls back to settings.KB_NUM_RESULTS
     ) -> Dict[str, Any]:
         """
-        Query knowledge base with metadata filtering and multilingual support.
+        Hybrid search + LLM summarisation flow:
 
-        Flow:
-        1. Detect language of the query
-        2. Translate query to English if needed
-        3. Search Bedrock KB in English
-        4. Translate results back to the original language
-        5. Return results with language metadata
-
-        Applies access control based on user_id and team_id.
+        1. Detect query language (English / Sinhala / Tamil)
+        2. Translate query to English when needed
+        3. Hybrid retrieval (vector + keyword) — 10 chunks
+        4. Claude Sonnet 4.5 generates a summarised answer with citations
+        5. Translate the generated answer back to the original language
         """
+        num_chunks = max_results or self.num_results
+
         try:
-            # Step 1: Detect query language
+            # ── 1. Language detection ────────────────────────────────────
             detected_lang = translation_service.detect_language(query)
             logger.info(f"Query language detected: {detected_lang}")
 
-            # Step 2: Translate query to English for KB search
+            # ── 2. Translate to English for retrieval ────────────────────
             english_query = query
             if not translation_service.is_english(detected_lang):
                 english_query = translation_service.to_english(query, detected_lang)
-                logger.info(f"Translated query to English: {english_query}")
+                logger.info(f"Translated query → English: {english_query}")
 
-            # Step 3: Build metadata filter
-            metadata_filter = {
-                'equals': {
-                    'key': 'user_id',
-                    'value': user_id
-                }
-            }
-
-            if team_id:
-                metadata_filter = {
-                    'orAll': [
-                        {
-                            'equals': {
-                                'key': 'user_id',
-                                'value': user_id
-                            }
-                        },
-                        {
-                            'equals': {
-                                'key': 'team_id',
-                                'value': team_id
-                            }
-                        }
-                    ]
-                }
-
-            logger.info(f"Querying KB with filter: {metadata_filter}")
-
-            # Step 4: Query Bedrock KB in English
-            response = self.bedrock_agent_runtime.retrieve(
-                knowledgeBaseId=self.kb_id,
-                retrievalQuery={'text': english_query},
-                retrievalConfiguration={
-                    'vectorSearchConfiguration': {
-                        'numberOfResults': max_results,
-                        'filter': metadata_filter
-                    }
-                }
+            # ── 3. Build retrieval config (HYBRID, optional filter) ───────
+            retrieval_config = self._build_retrieval_config(
+                num_chunks=num_chunks,
+                user_id=user_id,
+                team_id=team_id,
             )
 
-            results = response.get('retrievalResults', [])
-            logger.info(f"Retrieved {len(results)} results for query: '{english_query}'")
+            # ── 4. retrieve_and_generate with Claude Sonnet 4.5 ──────────
+            logger.info(
+                f"retrieve_and_generate — model: {self.model_arn}, "
+                f"search: HYBRID, chunks: {num_chunks}"
+            )
 
-            # Step 5: Format and translate results back to original language
-            formatted_results = []
-            for result in results:
-                english_content = result.get('content', {}).get('text', '')
+            response = self.bedrock_agent_runtime.retrieve_and_generate(
+                input={'text': english_query},
+                retrieveAndGenerateConfiguration={
+                    'type': 'KNOWLEDGE_BASE',
+                    'knowledgeBaseConfiguration': {
+                        'knowledgeBaseId': self.kb_id,
+                        'modelArn': self.model_arn,
+                        'retrievalConfiguration': retrieval_config,
+                        'generationConfiguration': {
+                            'promptTemplate': {
+                                'textPromptTemplate': (
+                                    'You are a helpful knowledge assistant. '
+                                    'Use only the retrieved context below to answer the question. '
+                                    'Be concise and accurate. '
+                                    'If the context does not contain enough information, say so.\n\n'
+                                    'Formatting rules:\n'
+                                    '- Use numbered lists (1. 2. 3.) for sequential steps.\n'
+                                    '- Use bullet points (-) for non-sequential items.\n'
+                                    '- Use **bold** for step titles and important terms.\n'
+                                    '- Keep each numbered list item on a single line.\n\n'
+                                    '$search_results$\n\n'
+                                    'Question: $query$'
+                                )
+                            },
+                        },
+                    },
+                },
+            )
 
-                # Translate content back to user's language if needed
-                if not translation_service.is_english(detected_lang) and english_content:
-                    translated_content = translation_service.from_english(
-                        english_content, detected_lang
-                    )
-                else:
-                    translated_content = english_content
+            # ── 5. Parse response ─────────────────────────────────────────
+            english_answer = response.get('output', {}).get('text', '')
+            raw_citations = response.get('citations', [])
+            logger.debug(f"Raw citations from Bedrock: {raw_citations}")
+            citations = self._parse_citations(raw_citations)
+            session_id = response.get('sessionId')
 
-                formatted_results.append({
-                    'content': translated_content,
-                    'content_english': english_content,  # keep original for reference
-                    'score': result.get('score', 0),
-                    'location': result.get('location', {}),
-                    'metadata': result.get('metadata', {})
-                })
+            logger.info(
+                f"Generated answer ({len(english_answer)} chars), "
+                f"{len(citations)} cited chunks"
+            )
+
+            # ── 6. Translate answer back to original language ─────────────
+            # Use markdown-aware translation so **bold**, ## headings, and
+            # - bullets survive the trip through Amazon Translate intact.
+            answer = english_answer
+            if not translation_service.is_english(detected_lang) and english_answer:
+                answer = translation_service.from_english_markdown(english_answer, detected_lang)
 
             return {
-                'results': formatted_results,
+                'answer': answer,
+                'answer_english': english_answer,
+                'citations': citations,
+                'results_count': len(citations),
+                # keep a flat `results` list so the frontend ResultCard still works
+                'results': citations,
+                'session_id': session_id,
                 'language': {
                     'detected': detected_lang,
                     'name': SUPPORTED_LANGUAGES.get(detected_lang, 'Unknown'),
                     'query_translated': not translation_service.is_english(detected_lang),
                     'english_query': english_query,
-                }
+                },
+                'retrieval': {
+                    'search_type': 'HYBRID',
+                    'chunks_requested': num_chunks,
+                    'chunks_returned': len(citations),
+                    'model': self.model_arn,
+                },
             }
 
         except Exception as e:
-            logger.error(f"Query failed: {str(e)}")
+            logger.error(f"Query failed: {str(e)}", exc_info=True)
             raise
 
-    def retrieve_and_generate(
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _build_retrieval_config(
         self,
-        query: str,
-        user_id: str,
-        team_id: Optional[str] = None,
-        model_arn: str = None
+        num_chunks: int,
+        user_id: Optional[str],
+        team_id: Optional[str],
     ) -> Dict[str, Any]:
         """
-        Retrieve documents and generate answer using LLM
-
-        This is a higher-level API that retrieves relevant documents
-        and uses Claude to generate an answer with citations.
+        Build the retrievalConfiguration block.
+        Uses HYBRID search (vector + keyword BM25).
+        Adds a metadata filter only when user_id is supplied.
         """
-        try:
-            # Default to Claude 3 Sonnet
-            if not model_arn:
-                model_arn = 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
+        vector_search_config: Dict[str, Any] = {
+            'numberOfResults': num_chunks,
+            'overrideSearchType': 'HYBRID',   # vector + keyword
+        }
 
-            # Build metadata filter
-            metadata_filter = {
-                'equals': {
-                    'key': 'user_id',
-                    'value': user_id
-                }
-            }
-
+        if user_id:
             if team_id:
-                metadata_filter = {
+                vector_search_config['filter'] = {
                     'orAll': [
-                        {
-                            'equals': {
-                                'key': 'user_id',
-                                'value': user_id
-                            }
-                        },
-                        {
-                            'equals': {
-                                'key': 'team_id',
-                                'value': team_id
-                            }
-                        }
+                        {'equals': {'key': 'user_id', 'value': user_id}},
+                        {'equals': {'key': 'team_id', 'value': team_id}},
                     ]
                 }
-
-            logger.info(f"Retrieve and generate for query: '{query}'")
-
-            # Call retrieve_and_generate API
-            response = self.bedrock_agent_runtime.retrieve_and_generate(
-                input={'text': query},
-                retrieveAndGenerateConfiguration={
-                    'type': 'KNOWLEDGE_BASE',
-                    'knowledgeBaseConfiguration': {
-                        'knowledgeBaseId': self.kb_id,
-                        'modelArn': model_arn,
-                        'retrievalConfiguration': {
-                            'vectorSearchConfiguration': {
-                                'numberOfResults': 5,
-                                'filter': metadata_filter
-                            }
-                        }
-                    }
+            else:
+                vector_search_config['filter'] = {
+                    'equals': {'key': 'user_id', 'value': user_id}
                 }
-            )
 
-            # Extract answer and citations
-            output = response.get('output', {}).get('text', '')
-            citations = response.get('citations', [])
+        return {'vectorSearchConfiguration': vector_search_config}
 
-            logger.info(f"Generated answer with {len(citations)} citations")
+    def _parse_citations(self, raw_citations: list) -> List[Dict[str, Any]]:
+        """
+        Flatten the Bedrock retrieve_and_generate citation structure.
 
-            return {
-                'answer': output,
-                'citations': citations,
-                'session_id': response.get('sessionId')
+        The response shape is:
+          citations: [
+            {
+              generatedResponsePart: { textResponsePart: { text, span } },
+              retrievedReferences: [
+                {
+                  content: { text },
+                  location: { s3Location: { uri } },
+                  metadata: { ... }
+                }
+              ]
             }
+          ]
 
-        except Exception as e:
-            logger.error(f"Retrieve and generate failed: {str(e)}")
-            raise
+        We deduplicate by S3 URI so the same source file isn't listed twice.
+        """
+        seen_uris: set = set()
+        chunks = []
+
+        for citation in raw_citations:
+            for ref in citation.get('retrievedReferences', []):
+                content_text = ref.get('content', {}).get('text', '')
+                location = ref.get('location', {})
+                metadata = ref.get('metadata', {})
+
+                s3_uri = (
+                    location.get('s3Location', {}).get('uri')
+                    or metadata.get('x-amz-bedrock-kb-source-uri', '')
+                )
+
+                # Skip duplicates
+                if s3_uri and s3_uri in seen_uris:
+                    continue
+                if s3_uri:
+                    seen_uris.add(s3_uri)
+
+                chunks.append({
+                    'content': {'text': content_text},
+                    'score': ref.get('score', 0),
+                    'location': location,
+                    'metadata': metadata,
+                    's3_uri': s3_uri,
+                    'source_file': s3_uri.split('/')[-1] if s3_uri else '',
+                })
+
+        logger.info(f"Parsed {len(chunks)} unique cited chunks from {len(raw_citations)} citation blocks")
+        return chunks
+
 
 # Singleton instance
 kb_query_service = KBQueryService()
