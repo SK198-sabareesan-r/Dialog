@@ -32,6 +32,53 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _mime_to_content_type(mime_type: str) -> str:
+    """Map Google Drive MIME type to a standard content type."""
+    mapping = {
+        'application/pdf':                                                        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword':                                                     'application/msword',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'text/plain':   'text/plain',
+        'text/html':    'text/html',
+        'text/csv':     'text/csv',
+        'image/png':    'image/png',
+        'image/jpeg':   'image/jpeg',
+        'video/mp4':    'video/mp4',
+        'audio/mpeg':   'audio/mpeg',
+        # Google native → exported as PDF
+        'application/vnd.google-apps.document':    'application/pdf',
+        'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.google-apps.presentation': 'application/pdf',
+    }
+    return mapping.get(mime_type, 'application/octet-stream')
+
+
+def _ext_to_content_type(filename: str) -> str:
+    """Guess content type from file extension."""
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    mapping = {
+        'pdf': 'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc': 'application/msword',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'csv': 'text/csv',
+        'txt': 'text/plain',
+        'html': 'text/html',
+        'json': 'application/json',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'mp4': 'video/mp4',
+        'mp3': 'audio/mpeg',
+        'wav': 'audio/wav',
+    }
+    return mapping.get(ext, 'application/octet-stream')
+
+
 # ---------------------------------------------------------------------------
 # Schedule → timedelta mapping
 # ---------------------------------------------------------------------------
@@ -55,7 +102,7 @@ class SyncService:
     # ------------------------------------------------------------------
 
     def _get_fernet(self) -> Fernet:
-        key = os.getenv('ENCRYPTION_KEY', settings.ENCRYPTION_KEY)
+        key = settings.ENCRYPTION_KEY or os.getenv('ENCRYPTION_KEY')
         if not key:
             raise RuntimeError(
                 "ENCRYPTION_KEY is not set. "
@@ -437,15 +484,47 @@ class SyncService:
                     access_token=access_token,
                     drive_id=drive_id,
                 )
+
+                # Extract file metadata
+                from services.metadata_extractor import metadata_extractor
+                content_type = _mime_to_content_type(mime_type)
+                extracted = metadata_extractor.extract_metadata(
+                    file_content=file_content,
+                    filename=file_name,
+                    content_type=content_type,
+                )
+
+                s3_metadata = {
+                    **extracted,
+                    'source':           'gdrive',
+                    'source_type':      'google_drive',
+                    'sync_config_id':   config.id,
+                    'sync_config_name': config.display_name or '',
+                    'gdrive_file_id':   file_id,
+                    'gdrive_drive_id':  drive_id or '',
+                    'filename':         file_name,
+                    'modified_time':    modified_time,
+                    'user_id':          config.user_id,
+                    'synced_at':        datetime.utcnow().isoformat(),
+                }
+
+                bedrock_metadata = {
+                    'metadataAttributes': {
+                        'source':           'google_drive',
+                        'sync_config_id':   config.id,
+                        'sync_config_name': config.display_name or '',
+                        'filename':         file_name,
+                        'user_id':          config.user_id,
+                        'modified_time':    modified_time,
+                    }
+                }
+
                 result = upload_service.upload_to_s3(
                     file_content=file_content,
                     file_name=file_name,
                     user_id=config.user_id,
-                    metadata={
-                        'source': 'gdrive',
-                        'sync_config_id': config.id,
-                        'gdrive_file_id': file_id,
-                    },
+                    metadata=s3_metadata,
+                    bedrock_metadata=bedrock_metadata,
                 )
                 self.mark_tracker_synced(
                     db, config.id, file_id, modified_time, result['s3_key']
@@ -537,16 +616,40 @@ class SyncService:
                     page_id=page_id,
                     page_title=page_title,
                 )
+
+                s3_metadata = {
+                    'source':              'confluence_sync',
+                    'source_type':         'confluence',
+                    'sync_config_id':      config.id,
+                    'sync_config_name':    config.display_name or '',
+                    'confluence_page_id':  page_id,
+                    'confluence_title':    page_title,
+                    'confluence_version':  version_number,
+                    'space_key':           space_key,
+                    'site_url':            site_url,
+                    'filename':            file_name,
+                    'user_id':             config.user_id,
+                    'synced_at':           datetime.utcnow().isoformat(),
+                }
+
+                bedrock_metadata = {
+                    'metadataAttributes': {
+                        'source':              'confluence',
+                        'sync_config_id':      config.id,
+                        'sync_config_name':    config.display_name or '',
+                        'confluence_page_id':  page_id,
+                        'confluence_title':    page_title,
+                        'space_key':           space_key,
+                        'user_id':             config.user_id,
+                    }
+                }
+
                 result = upload_service.upload_to_s3(
                     file_content=file_content,
                     file_name=file_name,
                     user_id=config.user_id,
-                    metadata={
-                        'source': 'confluence',
-                        'sync_config_id': config.id,
-                        'confluence_page_id': page_id,
-                        'space_key': space_key,
-                    },
+                    metadata=s3_metadata,
+                    bedrock_metadata=bedrock_metadata,
                 )
                 self.mark_tracker_synced(
                     db, config.id, page_id, version_number, result['s3_key']
@@ -623,19 +726,50 @@ class SyncService:
                     response = source_s3.get_object(Bucket=source_bucket, Key=source_key)
                     file_content = response['Body'].read()
 
-                    # Use just the filename component as the destination file name
                     file_name = source_key.split('/')[-1]
+                    file_size = obj.get('Size', len(file_content))
+                    last_modified = obj.get('LastModified', '').isoformat() if hasattr(obj.get('LastModified', ''), 'isoformat') else str(obj.get('LastModified', ''))
+
+                    from services.metadata_extractor import metadata_extractor
+                    content_type = _ext_to_content_type(file_name)
+                    extracted = metadata_extractor.extract_metadata(
+                        file_content=file_content,
+                        filename=file_name,
+                        content_type=content_type,
+                    )
+
+                    s3_metadata = {
+                        **extracted,
+                        'source':           's3_sync',
+                        'source_type':      'aws_s3',
+                        'sync_config_id':   config.id,
+                        'sync_config_name': config.display_name or '',
+                        'source_bucket':    source_bucket,
+                        'source_key':       source_key,
+                        'filename':         file_name,
+                        'file_size':        str(file_size),
+                        'last_modified':    last_modified,
+                        'user_id':          config.user_id,
+                        'synced_at':        datetime.utcnow().isoformat(),
+                    }
+
+                    bedrock_metadata = {
+                        'metadataAttributes': {
+                            'source':           'aws_s3',
+                            'sync_config_id':   config.id,
+                            'sync_config_name': config.display_name or '',
+                            'source_bucket':    source_bucket,
+                            'filename':         file_name,
+                            'user_id':          config.user_id,
+                        }
+                    }
 
                     result = upload_service.upload_to_s3(
                         file_content=file_content,
                         file_name=file_name,
                         user_id=config.user_id,
-                        metadata={
-                            'source': 's3',
-                            'sync_config_id': config.id,
-                            'source_bucket': source_bucket,
-                            'source_key': source_key,
-                        },
+                        metadata=s3_metadata,
+                        bedrock_metadata=bedrock_metadata,
                     )
                     self.mark_tracker_synced(
                         db, config.id, source_key, etag, result['s3_key']

@@ -2107,6 +2107,28 @@ async def trigger_sync_config(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/sync/configs/{config_id}/files")
+async def get_synced_files(
+    config_id: str,
+    user_id: str = Query(...),
+    limit: int = Query(100, le=500),
+    db=Depends(get_db),
+):
+    """List all files synced by a config (from sync_tracker)."""
+    try:
+        from services.sync_service import sync_service
+        config = sync_service.get_config(db=db, config_id=config_id, user_id=user_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+        files = sync_service.get_tracker_history(db=db, config_id=config_id, user_id=user_id, limit=limit)
+        return {"config_id": config_id, "files": files, "count": len(files)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"get_synced_files failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/sync/configs/{config_id}/history")
 async def get_sync_history(
     config_id: str,
