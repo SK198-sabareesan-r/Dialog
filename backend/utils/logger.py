@@ -157,17 +157,24 @@ def get_logger(
             logger.addHandler(error_handler)
 
             # Activity log file (time-based rotation - daily)
+            # Use delay=True to prevent file locking issues on Windows
             activity_log_file = LOG_DIR / 'activity.log'
-            activity_handler = TimedRotatingFileHandler(
-                activity_log_file,
-                when='midnight',
-                interval=1,
-                backupCount=30,  # Keep 30 days
-                encoding='utf-8'
-            )
-            activity_handler.setLevel(logging.INFO)
-            activity_handler.setFormatter(file_formatter)
-            logger.addHandler(activity_handler)
+            try:
+                activity_handler = TimedRotatingFileHandler(
+                    activity_log_file,
+                    when='midnight',
+                    interval=1,
+                    backupCount=30,  # Keep 30 days
+                    encoding='utf-8',
+                    delay=True  # Delay opening file until first write
+                )
+                activity_handler.setLevel(logging.INFO)
+                activity_handler.setFormatter(file_formatter)
+                logger.addHandler(activity_handler)
+            except (PermissionError, OSError) as e:
+                # If file is locked, just skip activity logging
+                # Main application.log will still work
+                pass
 
     # Add extra data if provided
     if extra_data:
