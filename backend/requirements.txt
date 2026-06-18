@@ -19,3 +19,6 @@ openpyxl
 mutagen
 APScheduler
 python-dateutil
+sqlalchemy
+psycopg2-binary
+alembic

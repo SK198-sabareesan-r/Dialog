@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ChatSessionProvider } from './context/ChatSessionContext';
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
@@ -48,6 +49,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
+        <ChatSessionProvider>
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
@@ -78,6 +80,7 @@ function App() {
             </ProtectedRoute>
           } />
         </Routes>
+        </ChatSessionProvider>
       </AuthProvider>
     </Router>
   );

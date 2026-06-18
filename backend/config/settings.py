@@ -42,6 +42,9 @@ class Settings:
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 
+    # PostgreSQL RDS (for chat sessions)
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@database-dialogbox.c9cu4cy0u7rk.ap-south-1.rds.amazonaws.com:5432/postgres')
+
     # JWT Configuration (for session management)
     JWT_SECRET = os.getenv('JWT_SECRET', 'dialog-bda-pipeline-secret-change-in-production')
     JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')

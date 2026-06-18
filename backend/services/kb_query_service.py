@@ -44,6 +44,10 @@ class KBQueryService:
         user_id: Optional[str] = None,
         team_id: Optional[str] = None,
         max_results: int = None,        # falls back to settings.KB_NUM_RESULTS
+        department: Optional[str] = None,
+        doc_type: Optional[str] = None,
+        topic: Optional[str] = None,
+        language: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Hybrid search + LLM summarisation flow:
@@ -68,10 +72,17 @@ class KBQueryService:
                 logger.info(f"Translated query → English: {english_query}")
 
             # ── 3. Build retrieval config (HYBRID, optional filter) ───────
+            # Only apply language filter if user explicitly passed it.
+            # Auto-detected language should NOT filter — the query is already
+            # translated to English, and many docs lack language metadata.
             retrieval_config = self._build_retrieval_config(
                 num_chunks=num_chunks,
                 user_id=user_id,
                 team_id=team_id,
+                department=department,
+                doc_type=doc_type,
+                topic=topic,
+                language=language,
             )
 
             # ── 4. retrieve_and_generate with Claude Sonnet 4.5 ──────────
@@ -117,9 +128,15 @@ class KBQueryService:
             # ── 5. Parse response ─────────────────────────────────────────
             english_answer = response.get('output', {}).get('text', '')
             raw_citations = response.get('citations', [])
-            logger.debug(f"Raw citations from Bedrock: {raw_citations}")
             citations = self._parse_citations(raw_citations)
             session_id = response.get('sessionId')
+
+            # Fallback: if retrieve_and_generate returned no citations
+            # (common with cross-region inference profiles), do a separate
+            # retrieve call to get the source documents.
+            if not citations:
+                logger.info("No citations from retrieve_and_generate — running fallback retrieve()")
+                citations = self._fallback_retrieve(english_query, retrieval_config, num_chunks)
 
             logger.info(
                 f"Generated answer ({len(english_answer)} chars), "
@@ -168,31 +185,110 @@ class KBQueryService:
         num_chunks: int,
         user_id: Optional[str],
         team_id: Optional[str],
+        department: Optional[str] = None,
+        doc_type: Optional[str] = None,
+        topic: Optional[str] = None,
+        language: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build the retrievalConfiguration block.
         Uses HYBRID search (vector + keyword BM25).
-        Adds a metadata filter only when user_id is supplied.
+        Dynamically builds metadata filters from user_id, team_id,
+        and auto-generated tags (department, doc_type, topic, language).
+
+        For multilingual documents: uses 'in' operator on 'languages' field
+        so a Tamil query matches docs tagged ["en", "ta", "si"].
         """
         vector_search_config: Dict[str, Any] = {
             'numberOfResults': num_chunks,
             'overrideSearchType': 'HYBRID',   # vector + keyword
         }
 
-        if user_id:
-            if team_id:
-                vector_search_config['filter'] = {
-                    'orAll': [
-                        {'equals': {'key': 'user_id', 'value': user_id}},
-                        {'equals': {'key': 'team_id', 'value': team_id}},
-                    ]
-                }
-            else:
-                vector_search_config['filter'] = {
-                    'equals': {'key': 'user_id', 'value': user_id}
-                }
+        # Build filter conditions dynamically
+        filters = []
+
+        # Access control filters — only apply if documents actually have
+        # user_id/team_id metadata. Skipped for shared KBs where all
+        # users can access all documents.
+        # if user_id and team_id:
+        #     filters.append({
+        #         'orAll': [
+        #             {'equals': {'key': 'user_id', 'value': user_id}},
+        #             {'equals': {'key': 'team_id', 'value': team_id}},
+        #         ]
+        #     })
+        # elif user_id:
+        #     filters.append({'equals': {'key': 'user_id', 'value': user_id}})
+
+        # Content filters from auto-generated tags (AND logic with access control)
+        if department:
+            filters.append({'equals': {'key': 'department', 'value': department}})
+        if doc_type:
+            filters.append({'equals': {'key': 'doc_type', 'value': doc_type}})
+        if topic:
+            filters.append({'equals': {'key': 'topic', 'value': topic}})
+
+        # Language filter: only applied when user explicitly requests it.
+        # Uses 'in' operator so a Tamil filter matches docs tagged ["en", "ta"].
+        if language and language != 'en':
+            filters.append({
+                'in': {'key': 'languages', 'value': [language, 'en']}
+            })
+
+        # Combine all filters with AND
+        if len(filters) > 1:
+            vector_search_config['filter'] = {'andAll': filters}
+        elif len(filters) == 1:
+            vector_search_config['filter'] = filters[0]
 
         return {'vectorSearchConfiguration': vector_search_config}
+
+    def _fallback_retrieve(
+        self, query: str, retrieval_config: Dict[str, Any], num_chunks: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Fallback: call retrieve() separately to get source documents when
+        retrieve_and_generate doesn't return citations (common with cross-region
+        inference profiles like global.anthropic.*).
+        """
+        try:
+            response = self.bedrock_agent_runtime.retrieve(
+                knowledgeBaseId=self.kb_id,
+                retrievalQuery={'text': query},
+                retrievalConfiguration=retrieval_config,
+            )
+
+            results = response.get('retrievalResults', [])
+            chunks = []
+            seen_uris = set()
+
+            for result in results[:num_chunks]:
+                content_text = result.get('content', {}).get('text', '')
+                location = result.get('location', {})
+                score = result.get('score', 0)
+
+                s3_uri = location.get('s3Location', {}).get('uri', '')
+
+                if s3_uri and s3_uri in seen_uris:
+                    continue
+                if s3_uri:
+                    seen_uris.add(s3_uri)
+
+                chunks.append({
+                    'content': {'text': content_text},
+                    'score': score,
+                    'location': location,
+                    'metadata': result.get('metadata', {}),
+                    's3_uri': s3_uri,
+                    'source_file': s3_uri.split('/')[-1] if s3_uri else '',
+                })
+
+            logger.info(f"Fallback retrieve returned {len(chunks)} chunks")
+            return chunks
+
+        except Exception as e:
+            logger.error(f"Fallback retrieve failed: {e}")
+            return []
 
     def _parse_citations(self, raw_citations: list) -> List[Dict[str, Any]]:
         """

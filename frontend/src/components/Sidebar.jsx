@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useChatSessions } from '../context/ChatSessionContext';
 import {
-  Upload, Search,
+  Upload, MessageSquare,
   Menu, X, LogOut, ChevronRight,
+  Plus, Trash2, Loader,
 } from 'lucide-react';
 
 /* ── Dialog logo — official logo from dialog.lk ── */
@@ -27,7 +29,7 @@ const DialogLogoBlock = () => (
         width: 40,
         height: 40,
         borderRadius: '50%',
-        background: 'linear-gradient(135deg, #E4002B 0%, #C20023 100%)',
+        background: 'linear-gradient(135deg, #ff4e2e 0%, #C20023 100%)',
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
@@ -38,10 +40,7 @@ const DialogLogoBlock = () => (
         D
       </span>
     </div>
-    <div style={{ marginLeft: 8 }}>
-      <p style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A1A2E', lineHeight: 1.2 }}>BDA Pipeline</p>
-      <p style={{ fontSize: '0.7rem', color: '#9CA3AF', marginTop: 2 }}>Knowledge Base</p>
-    </div>
+    <div style={{ marginLeft: 8 }} />
   </div>
 );
 
@@ -59,8 +58,7 @@ const UserBadge = ({ user }) => {
 
   return (
     <div
-      className="hidden md:flex items-center gap-2 px-5 py-3 border-b"
-      style={{ borderColor: '#E8EAF0' }}
+      className="flex items-center gap-2 px-5 py-3"
     >
       {user.picture ? (
         <img
@@ -95,18 +93,46 @@ const UserBadge = ({ user }) => {
 
 const navItems = [
   { name: 'Upload',   path: '/upload',   icon: Upload  },
-  { name: 'Retrieve', path: '/retrieve', icon: Search  },
+  { name: 'Chat', path: '/retrieve', icon: MessageSquare  },
 ];
+
+const DIALOG_RED = '#ff4e2e';
 
 const Sidebar = () => {
   const location  = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const chatSessions = useChatSessions();
   const [open, setOpen] = useState(false);
+
+  const isOnChat = location.pathname === '/retrieve';
+
+  useEffect(() => {
+    if (isOnChat && chatSessions) {
+      chatSessions.loadSessions();
+    }
+  }, [isOnChat]);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleNewChat = () => {
+    if (chatSessions) chatSessions.startNewChat();
+    navigate('/retrieve');
+    setOpen(false);
+  };
+
+  const handleSessionClick = (sessionId) => {
+    if (chatSessions) chatSessions.setActiveSessionId(sessionId);
+    navigate('/retrieve');
+    setOpen(false);
+  };
+
+  const handleDeleteSession = (e, sessionId) => {
+    e.stopPropagation();
+    if (chatSessions) chatSessions.deleteSession(sessionId);
   };
 
   const NavLink = ({ item, onClick }) => {
@@ -118,13 +144,13 @@ const Sidebar = () => {
         onClick={onClick}
         className="flex items-center gap-3 mx-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group"
         style={{
-          background: active ? '#E4002B' : 'transparent',
+          background: active ? '#ff4e2e' : 'transparent',
           color:      active ? '#FFFFFF' : '#6B7280',
         }}
         onMouseEnter={e => {
           if (!active) {
             e.currentTarget.style.background = '#FFF5F5';
-            e.currentTarget.style.color      = '#E4002B';
+            e.currentTarget.style.color      = '#ff4e2e';
           }
         }}
         onMouseLeave={e => {
@@ -166,7 +192,7 @@ const Sidebar = () => {
               width: 32,
               height: 32,
               borderRadius: '50%',
-              background: '#E4002B',
+              background: '#ff4e2e',
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -203,22 +229,83 @@ const Sidebar = () => {
         }}
       >
         <DialogLogoBlock />
-        <UserBadge user={user} />
 
         {/* Nav items */}
-        <nav className="flex-1 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="py-4 space-y-0.5">
           {navItems.map(item => (
             <NavLink key={item.path} item={item} onClick={() => setOpen(false)} />
           ))}
         </nav>
 
-        {/* Logout */}
-        <div className="py-4 border-t" style={{ borderColor: '#E8EAF0' }}>
+        {/* Chat sessions — shown when on /retrieve */}
+        {isOnChat && chatSessions && (
+          <div className="flex-1 flex flex-col overflow-hidden border-t" style={{ borderColor: '#E8EAF0' }}>
+            {/* New Chat button */}
+            <button
+              onClick={handleNewChat}
+              className="flex items-center gap-2 mx-3 mt-3 mb-2 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+              style={{ background: DIALOG_RED, color: '#FFFFFF' }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Chat
+            </button>
+
+            {/* Session list */}
+            <div className="flex-1 overflow-y-auto px-2 pb-2">
+              {chatSessions.sessionsLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader className="w-4 h-4 animate-spin" style={{ color: '#9CA3AF' }} />
+                </div>
+              ) : chatSessions.sessions.length === 0 ? (
+                <p className="text-xs text-center py-6" style={{ color: '#9CA3AF' }}>
+                  No conversations yet
+                </p>
+              ) : (
+                <div className="space-y-0.5">
+                  {chatSessions.sessions.map(s => (
+                    <div
+                      key={s.id}
+                      onClick={() => handleSessionClick(s.id)}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-all group"
+                      style={{
+                        background: s.id === chatSessions.activeSessionId ? `${DIALOG_RED}08` : 'transparent',
+                        border: `1px solid ${s.id === chatSessions.activeSessionId ? `${DIALOG_RED}20` : 'transparent'}`,
+                      }}
+                      onMouseEnter={e => { if (s.id !== chatSessions.activeSessionId) e.currentTarget.style.background = '#F9FAFB'; }}
+                      onMouseLeave={e => { if (s.id !== chatSessions.activeSessionId) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <MessageSquare className="w-3 h-3 flex-shrink-0" style={{ color: s.id === chatSessions.activeSessionId ? DIALOG_RED : '#9CA3AF' }} />
+                      <span className="text-xs truncate flex-1" style={{ color: s.id === chatSessions.activeSessionId ? DIALOG_RED : '#4B5563' }}>
+                        {s.title}
+                      </span>
+                      <button
+                        onClick={(e) => handleDeleteSession(e, s.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded"
+                        style={{ color: '#9CA3AF' }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#DC2626'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = '#9CA3AF'; }}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Spacer when not on chat page */}
+        {!isOnChat && <div className="flex-1" />}
+
+        {/* User details + Logout */}
+        <div className="border-t" style={{ borderColor: '#E8EAF0' }}>
+          <UserBadge user={user} />
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 mx-3 px-3 py-2.5 rounded-lg w-full text-sm font-medium transition-all"
+            className="flex items-center gap-3 mx-3 mb-3 px-3 py-2.5 rounded-lg w-full text-sm font-medium transition-all"
             style={{ color: '#6B7280' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#FFF5F5'; e.currentTarget.style.color = '#E4002B'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#FFF5F5'; e.currentTarget.style.color = '#ff4e2e'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6B7280'; }}
           >
             <LogOut className="w-4 h-4" />

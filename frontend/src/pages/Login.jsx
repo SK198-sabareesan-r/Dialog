@@ -19,7 +19,7 @@ const DialogLogo = ({ size = 120 }) => (
   </svg>
 );
 
-/* ── Animated wave background — matches dialog.lk login ── */
+/* ── Animated wave background — Dialog.lk brand gradient ── */
 const WaveBackground = () => (
   <div style={{
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -34,14 +34,14 @@ const WaveBackground = () => (
     >
       <defs>
         <linearGradient id="wave1" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stopColor="#C850C0" stopOpacity="0.9" />
-          <stop offset="40%"  stopColor="#ED1C24" stopOpacity="0.75" />
-          <stop offset="100%" stopColor="#FF6B6B" stopOpacity="0.6" />
+          <stop offset="0%"   stopColor="#f36d24" stopOpacity="0.9" />
+          <stop offset="50%"  stopColor="#e34984" stopOpacity="0.85" />
+          <stop offset="100%" stopColor="#9e3883" stopOpacity="0.8" />
         </linearGradient>
         <linearGradient id="wave2" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stopColor="#B44FD8" stopOpacity="0.7" />
-          <stop offset="50%"  stopColor="#E040A0" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#FF8C69" stopOpacity="0.4" />
+          <stop offset="0%"   stopColor="#f7941d" stopOpacity="0.6" />
+          <stop offset="50%"  stopColor="#ff4e2e" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#9F215D" stopOpacity="0.4" />
         </linearGradient>
       </defs>
       {/* Back wave */}
@@ -61,7 +61,7 @@ const WaveBackground = () => (
       position: 'absolute', top: '5%', right: '-5%',
       width: '35%', height: '45%',
       borderRadius: '50%',
-      background: 'radial-gradient(ellipse, rgba(255,140,100,0.35) 0%, transparent 70%)',
+      background: 'radial-gradient(ellipse, rgba(243,109,36,0.3) 0%, transparent 70%)',
     }} />
   </div>
 );
@@ -142,14 +142,7 @@ const Login = () => {
           <DialogLogo size={160} />
         </div>
 
-        <h2 style={{
-          fontWeight: 700, fontSize: '1.1rem',
-          color: '#1A1A2E', textAlign: 'center',
-          marginBottom: '0.5rem', lineHeight: 1.4,
-        }}>
-          BDA Knowledge Base Pipeline
-        </h2>
-        <p style={{ color: '#9CA3AF', fontSize: '0.85rem', marginBottom: '2rem', textAlign: 'center' }}>
+        <p style={{ color: '#6c757d', fontSize: '0.85rem', marginBottom: '2rem', textAlign: 'center' }}>
           Sign in with your Google account to continue
         </p>
 
@@ -174,7 +167,7 @@ const Login = () => {
           onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 6px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = '#E5E7EB'; }}
         >
           {loading ? (
-            <Loader className="w-5 h-5 animate-spin" style={{ color: '#ED1C24' }} />
+            <Loader className="w-5 h-5 animate-spin" style={{ color: '#ff4e2e' }} />
           ) : (
             <svg width="20" height="20" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

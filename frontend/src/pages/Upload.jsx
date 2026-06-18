@@ -18,7 +18,7 @@ const PageHeader = ({ title, subtitle }) => (
     style={{ borderColor: '#E8EAF0' }}
   >
     <div>
-      <h1 className="text-lg font-semibold" style={{ color: '#1A1A2E' }}>{title}</h1>
+      <h1 className="text-lg font-semibold" style={{ color: '#343a40' }}>{title}</h1>
       {subtitle && <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>{subtitle}</p>}
     </div>
   </div>
@@ -163,7 +163,7 @@ const SyncStatusCard = ({ s3Key, filename }) => {
       </div>
 
       {/* Status label */}
-      <p className="text-sm font-medium mb-1" style={{ color: '#1A1A2E' }}>
+      <p className="text-sm font-medium mb-1" style={{ color: '#343a40' }}>
         {cfg.label}
       </p>
 
@@ -199,7 +199,7 @@ const SyncStatusCard = ({ s3Key, filename }) => {
               className="rounded-lg p-2.5 text-center"
               style={{ background: 'rgba(255,255,255,0.7)' }}
             >
-              <p className="text-lg font-bold" style={{ color: '#1A1A2E' }}>{value ?? '—'}</p>
+              <p className="text-lg font-bold" style={{ color: '#343a40' }}>{value ?? '—'}</p>
               <p className="text-xs" style={{ color: '#9CA3AF' }}>{label}</p>
             </div>
           ))}
@@ -328,7 +328,7 @@ const Upload = () => {
         }
       `}</style>
 
-      <PageHeader title="Upload Documents" subtitle="Upload files to the BDA ingestion pipeline" />
+      <PageHeader title="Upload Documents" subtitle="Upload files to the ingestion pipeline" />
 
       <div className="p-6">
         <div className="max-w-3xl mx-auto">
@@ -338,9 +338,9 @@ const Upload = () => {
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#3B82F6' }} />
               <p className="text-xs leading-relaxed" style={{ color: '#1E40AF' }}>
-                Files are stored in S3 then automatically parsed, chunked, embedded, and indexed by
-                Bedrock Data Automation. Videos are transcribed by BDA. KB ingestion runs in the
-                background — the upload response returns immediately. Maximum file size: 500MB.
+                Files are stored in S3 then automatically parsed, chunked, embedded, and indexed.
+                Videos are transcribed automatically. Ingestion runs in the background — the upload
+                response returns immediately. Maximum file size: 500MB.
               </p>
             </div>
           </div>
@@ -365,7 +365,7 @@ const Upload = () => {
                   <div className="p-4 rounded-full mb-3" style={{ background: isVideo ? '#EFF6FF' : '#ECFDF5' }}>
                     <FileIcon className="w-10 h-10" style={{ color: isVideo ? '#3B82F6' : '#059669' }} />
                   </div>
-                  <p className="font-semibold text-base mb-1" style={{ color: '#1A1A2E' }}>{file.name}</p>
+                  <p className="font-semibold text-base mb-1" style={{ color: '#343a40' }}>{file.name}</p>
                   <p className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
                     {(file.size / 1024 / 1024).toFixed(2)} MB • {file.type || 'Unknown type'}
                   </p>
@@ -373,7 +373,7 @@ const Upload = () => {
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold mb-3"
                       style={{ background: '#EFF6FF', color: '#3B82F6' }}>
                       <Film className="w-3 h-3" />
-                      Video — audio will be transcribed by BDA
+                      Video — audio will be transcribed automatically
                     </span>
                   )}
                   {uploadProgress > 0 && uploadProgress < 100 && (
@@ -397,7 +397,7 @@ const Upload = () => {
                     style={{ background: isDragging ? PINK : `${PINK}12` }}>
                     <UploadIcon className="w-10 h-10" style={{ color: isDragging ? '#FFFFFF' : PINK }} />
                   </div>
-                  <p className="font-semibold text-base mb-2" style={{ color: '#1A1A2E' }}>
+                  <p className="font-semibold text-base mb-2" style={{ color: '#343a40' }}>
                     {isDragging ? 'Drop your file here' : 'Drag and drop your file here'}
                   </p>
                   <p className="text-sm mb-6" style={{ color: '#9CA3AF' }}>or browse from your computer</p>
@@ -454,7 +454,7 @@ const Upload = () => {
                 <div className="flex items-start gap-3">
                   <CheckCircle className="w-6 h-6 flex-shrink-0 mt-0.5" style={{ color: '#059669' }} />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-base mb-1" style={{ color: '#1A1A2E' }}>
+                    <h3 className="font-semibold text-base mb-1" style={{ color: '#343a40' }}>
                       File uploaded to S3
                     </h3>
                     <p className="text-xs font-mono break-all mb-2" style={{ color: '#059669' }}>
@@ -482,7 +482,7 @@ const Upload = () => {
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 mt-0.5" style={{ color: '#DC2626' }} />
                 <div className="flex-1">
-                  <h3 className="font-semibold text-base mb-1" style={{ color: '#1A1A2E' }}>Upload Failed</h3>
+                  <h3 className="font-semibold text-base mb-1" style={{ color: '#343a40' }}>Upload Failed</h3>
                   <p className="text-sm" style={{ color: '#6B7280' }}>{error}</p>
                   <button onClick={() => setError(null)} className="mt-3 text-xs font-medium underline" style={{ color: '#DC2626' }}>
                     Dismiss

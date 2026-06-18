@@ -139,7 +139,7 @@ const PipelineScene = ({ activeStage }) => {
     stepFunctions: { pos: [0, 0, 0], label: 'Step Functions', color: '#a78bfa' },
     formatProcessor: { pos: [0, -1.5, 0], label: 'Format Processor', color: '#f97316' },
     handlers: [
-      { pos: [-3, -3, 0], label: 'BDA', color: '#ef4444' },
+      { pos: [-3, -3, 0], label: 'Parser', color: '#ef4444' },
       { pos: [-1, -3, 0], label: 'Textract', color: '#8b5cf6' },
       { pos: [1, -3, 0], label: 'Transcribe', color: '#14b8a6' },
       { pos: [3, -3, 0], label: 'Excel', color: '#22c55e' },

@@ -100,7 +100,7 @@ const PipelineFlow3D = ({ activeStage = null }) => {
     ],
     rawZone: { pos: [0, 1.5, 0], label: 'S3 Raw Zone', color: '#e6f1fb' },
     stepFunctions: { pos: [0, 0, 0], label: 'Step Functions', color: '#f1efe8' },
-    bda: { pos: [0, -1.5, 0], label: 'BDA Parser', color: '#faece7' },
+    bda: { pos: [0, -1.5, 0], label: 'Parser', color: '#faece7' },
     processed: { pos: [-2.5, -3, 0], label: 'S3 Processed', color: '#e6f1fb' },
     dlq: { pos: [2.5, -3, 0], label: 'DLQ', color: '#fcebeb' },
     kb: { pos: [-2.5, -4.5, 0], label: 'Knowledge Base', color: '#eeeefd' },

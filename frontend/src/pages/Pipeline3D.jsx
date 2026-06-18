@@ -8,7 +8,7 @@ const stages = [
   { id: 'sources', name: 'Data Sources', dot: '#6B7280', description: 'Web UI, Shared Drives, File Repos' },
   { id: 'raw', name: 'S3 Raw Zone', dot: '#1565C0', description: 'Centralized storage for uploaded files' },
   { id: 'orchestration', name: 'Step Functions', dot: '#6B7280', description: 'Orchestrates the ingestion workflow' },
-  { id: 'bda', name: 'BDA Parser', dot: '#D97706', description: 'Bedrock Data Automation parses documents' },
+  { id: 'bda', name: 'Parser', dot: '#D97706', description: 'Parses and processes documents' },
   { id: 'processed', name: 'S3 Processed', dot: '#1565C0', description: 'Stores parsed and chunked content' },
   { id: 'dlq', name: 'Dead Letter Queue', dot: '#DC2626', description: 'Handles failed ingestions' },
   { id: 'kb', name: 'Knowledge Base', dot: PINK, description: 'AWS Bedrock Knowledge Base' },
@@ -74,7 +74,7 @@ const Pipeline3D = () => {
     <div className="min-h-screen pb-8">
       <PageHeader
         title="3D Pipeline Visualization"
-        subtitle="Interactive visualization of the BDA ingestion pipeline"
+        subtitle="Interactive visualization of the ingestion pipeline"
       />
 
       <div className="p-6">
@@ -261,7 +261,7 @@ const Pipeline3D = () => {
               </h3>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: '#6B7280' }}>
-              Data flows from multiple sources → Raw S3 → BDA Parser → Processed S3 → Knowledge Base →
+              Data flows from multiple sources → Raw S3 → Parser → Processed S3 → Knowledge Base →
               OpenSearch for semantic retrieval.
             </p>
           </div>
@@ -276,7 +276,7 @@ const Pipeline3D = () => {
               </h3>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: '#6B7280' }}>
-              Failed BDA jobs retry with exponential backoff. After 3 attempts, they're sent to the DLQ with
+              Failed jobs retry with exponential backoff. After 3 attempts, they're sent to the DLQ with
               CloudWatch alerts.
             </p>
           </div>

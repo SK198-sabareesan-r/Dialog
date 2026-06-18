@@ -12,6 +12,7 @@ Flow:
       → KB incremental sync picks it up automatically
 """
 
+import json
 import boto3
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -19,6 +20,7 @@ from config import settings
 from utils.logger import get_logger
 from .ingestion_tracker import ingestion_tracker
 from .metadata_extractor import metadata_extractor
+from .auto_tagger_service import auto_tagger_service
 
 logger = get_logger(__name__)
 
@@ -170,7 +172,6 @@ class FileRepositoryService:
             dest_key = f"file_repo/{source_bucket}/{source_key}"
 
             # Build combined metadata
-            import json
             combined_metadata = {}
             for k, v in extracted_metadata.items():
                 if isinstance(v, (dict, list)):
@@ -193,6 +194,28 @@ class FileRepositoryService:
             if department:
                 combined_metadata["department"] = department
 
+            # Auto-tag with Claude for Bedrock KB filtering
+            try:
+                bedrock_metadata = auto_tagger_service.generate_tags(
+                    file_content=file_content,
+                    filename=filename,
+                    content_type=content_type,
+                    user_id=user_id,
+                    team_id=team_id,
+                    department=department,
+                )
+            except Exception as e:
+                logger.warning(f"Auto-tagging failed for {filename}: {e}")
+                bedrock_metadata = {
+                    "metadataAttributes": {
+                        "user_id": user_id,
+                        "filename": filename,
+                        "source": "file_repository",
+                        **({"team_id": team_id} if team_id else {}),
+                        **({"department": department} if department else {}),
+                    }
+                }
+
             # Upload to centralised bucket
             self.s3_client.put_object(
                 Bucket=self.central_bucket,
@@ -200,6 +223,15 @@ class FileRepositoryService:
                 Body=file_content,
                 ContentType=content_type,
                 Metadata=combined_metadata,
+            )
+
+            # Write Bedrock KB .metadata.json companion file
+            metadata_key = f"{dest_key}.metadata.json"
+            self.s3_client.put_object(
+                Bucket=self.central_bucket,
+                Key=metadata_key,
+                Body=json.dumps(bedrock_metadata, ensure_ascii=False).encode("utf-8"),
+                ContentType="application/json",
             )
 
             # Get ETag of uploaded file and record in tracker

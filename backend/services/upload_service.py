@@ -58,11 +58,19 @@ class UploadService:
         file_name: str,
         user_id: str,
         metadata: Dict[str, Any],
+        bedrock_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Store file in S3 with metadata and record it in the ingestion tracker.
+        Also writes a companion .metadata.json file for Bedrock KB filtering.
+
         Returns as soon as the S3 PUT completes — KB sync is NOT started here.
         The caller is responsible for scheduling background_sync().
+
+        Args:
+            bedrock_metadata: If provided, written as the Bedrock KB .metadata.json
+                              file alongside the document. Must follow the format:
+                              {"metadataAttributes": {"key": "value", ...}}
         """
         # Store all files in docs folder without timestamp
         # This allows ETag tracking to detect file updates
@@ -83,6 +91,21 @@ class UploadService:
                 Metadata=string_metadata,
             )
             upload_ms = round((time.time() - t0) * 1000, 2)
+
+            # Write Bedrock KB .metadata.json companion file
+            if bedrock_metadata:
+                metadata_key = f"{s3_key}.metadata.json"
+                self.s3_client.put_object(
+                    Bucket=self.bucket,
+                    Key=metadata_key,
+                    Body=json.dumps(bedrock_metadata, ensure_ascii=False).encode("utf-8"),
+                    ContentType="application/json",
+                )
+                logger.info(json.dumps({
+                    "event":        "metadata_json_written",
+                    "metadata_key": metadata_key,
+                    "attributes":   list(bedrock_metadata.get("metadataAttributes", {}).keys()),
+                }))
 
             head = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
             etag = head["ETag"].strip('"')

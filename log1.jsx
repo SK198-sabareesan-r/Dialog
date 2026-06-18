@@ -142,13 +142,6 @@ const Login = () => {
           <DialogLogo size={160} />
         </div>
  
-        <h2 style={{
-          fontWeight: 700, fontSize: '1.1rem',
-          color: '#1A1A2E', textAlign: 'center',
-          marginBottom: '0.5rem', lineHeight: 1.4,
-        }}>
-          BDA Knowledge Base Pipeline
-        </h2>
         <p style={{ color: '#9CA3AF', fontSize: '0.85rem', marginBottom: '2rem', textAlign: 'center' }}>
           Sign in with your Google account to continue
         </p>
