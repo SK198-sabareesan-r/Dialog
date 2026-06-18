@@ -10,7 +10,7 @@ from pathlib import Path
 backend_root = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_root))
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, BackgroundTasks, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from services.upload_service import upload_service
 from services.google_drive_service import google_drive_service
+from services.confluence_service import confluence_service
 from services.metadata_extractor import metadata_extractor
 from services.kb_query_service import kb_query_service
 from services.ingestion_tracker import ingestion_tracker
@@ -81,6 +82,23 @@ async def scheduled_incremental_sync():
     except Exception as e:
         logger.error(f"Scheduled sync failed: {str(e)}")
 
+
+async def _poll_sync_configs():
+    """Background job: run any SyncConfig rows that are due for execution."""
+    try:
+        from services.sync_service import sync_service
+        from services.database import SessionLocal as _SessionLocal
+        db = _SessionLocal()
+        try:
+            sync_service.run_due_syncs(db)
+        except Exception as e:
+            logger.error(f"Sync poll failed: {e}")
+        finally:
+            db.close()
+    except ImportError as e:
+        logger.warning(f"sync_service not available: {e}")
+
+
 app = FastAPI(
     title="Knowledge Base API",
     description="Multi-source document ingestion with automatic metadata extraction",
@@ -127,6 +145,13 @@ async def start_scheduler():
         trigger=IntervalTrigger(minutes=SYNC_INTERVAL_MINUTES),
         id="incremental_sync",
         name=f"Incremental KB sync every {SYNC_INTERVAL_MINUTES}m",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _poll_sync_configs,
+        trigger=IntervalTrigger(minutes=1),
+        id="poll_sync_configs",
+        name="Poll scheduled source syncs every 1m",
         replace_existing=True,
     )
     scheduler.start()
@@ -183,6 +208,15 @@ class SyncRequest(BaseModel):
 class ScheduledSyncRequest(BaseModel):
     """Used by EventBridge / external scheduler to trigger incremental sync"""
     source: str = "scheduler"  # Who triggered this: scheduler, manual, s3_event
+
+
+class SyncConfigCreate(BaseModel):
+    user_id: str
+    source_type: str  # 'gdrive' | 'confluence' | 's3'
+    display_name: str
+    credentials: dict  # raw dict, will be encrypted server-side
+    schedule: str = 'daily'
+    space_or_path: Optional[str] = None
 
 
 class FileRepoImportRequest(BaseModel):
@@ -292,16 +326,17 @@ async def auth_callback(
         )
 
         access_token = tokens["access_token"]
-        # refresh_token = tokens.get("refresh_token")  # Store for future use
+        refresh_token = tokens.get("refresh_token", "")
 
         # Get user information
         logger.info("Fetching user info from Google...")
         user_info = auth_service.get_user_info(access_token)
 
-        # Create JWT token with embedded Drive access token
+        # Create JWT token with embedded Drive access token + refresh token
         jwt_token = auth_service.create_jwt_token(
             user_info=user_info,
-            drive_token=access_token
+            drive_token=access_token,
+            refresh_token=refresh_token,
         )
 
         logger.info(f"User authenticated: {user_info['email']}")
@@ -351,6 +386,45 @@ async def get_current_user(authorization: Optional[str] = Query(None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     except Exception as e:
         logger.error(f"Get current user failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/auth/refresh-drive-token")
+async def refresh_drive_token(request: Request):
+    """
+    Exchange the stored refresh_token for a new Google Drive access token
+    and return an updated JWT. Called by the frontend when a 401 is received.
+    """
+    try:
+        body = await request.json()
+        jwt_token = body.get("jwt_token")
+        if not jwt_token:
+            raise HTTPException(status_code=400, detail="jwt_token required")
+
+        payload = auth_service.verify_jwt_token(jwt_token)
+        refresh_token = payload.get("drive_refresh_token", "")
+        if not refresh_token:
+            raise HTTPException(status_code=400, detail="No refresh token available — user must re-login")
+
+        new_access_token = auth_service.refresh_drive_token(refresh_token)
+
+        user_info = {
+            "id": payload["sub"],
+            "email": payload["email"],
+            "name": payload["name"],
+            "picture": payload.get("picture", ""),
+        }
+        new_jwt = auth_service.create_jwt_token(
+            user_info=user_info,
+            drive_token=new_access_token,
+            refresh_token=refresh_token,
+        )
+        return {"token": new_jwt, "drive_token": new_access_token}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"refresh_drive_token failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -647,6 +721,9 @@ async def list_shared_drives(google_access_token: str = Query(...)):
             "note": "Use drive 'id' in the import request to import from a Shared Drive"
         }
     except Exception as e:
+        status = getattr(getattr(e, 'response', None), 'status_code', None)
+        if status == 401 or '401' in str(e):
+            raise HTTPException(status_code=401, detail="Google access token expired — please re-authenticate")
         logger.error(f"Failed to list shared drives: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -686,7 +763,56 @@ async def browse_drive_folder(
             }
         }
     except Exception as e:
+        status = getattr(getattr(e, 'response', None), 'status_code', None)
+        if status == 401 or '401' in str(e):
+            raise HTTPException(status_code=401, detail="Google access token expired — please re-authenticate")
         logger.error(f"Failed to browse drive folder: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/google-drive/shared-with-me")
+async def list_shared_with_me(
+    google_access_token: str = Query(...),
+    page_token: Optional[str] = Query(None),
+):
+    """
+    List folders shared with the authenticated user by other Google accounts.
+    Returns folders only — user picks one as a sync source.
+    """
+    import requests as req
+    try:
+        headers = {"Authorization": f"Bearer {google_access_token}"}
+        params = {
+            "q": "sharedWithMe = true and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+            "fields": "nextPageToken, files(id, name, mimeType, owners, sharingUser)",
+            "pageSize": 100,
+            "orderBy": "name",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        resp = req.get("https://www.googleapis.com/drive/v3/files", headers=headers, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+
+        folders = [
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "owner": f.get("owners", [{}])[0].get("displayName", ""),
+                "owner_email": f.get("owners", [{}])[0].get("emailAddress", ""),
+                "shared_by": f.get("sharingUser", {}).get("displayName", ""),
+            }
+            for f in data.get("files", [])
+        ]
+        return {"folders": folders, "count": len(folders), "next_page_token": data.get("nextPageToken")}
+
+    except req.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Google access token expired")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list shared-with-me: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -947,6 +1073,352 @@ async def import_from_s3_uri(request: FileRepoUriImportRequest):
     except Exception as e:
         logger.error(f"URI import failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Confluence Cloud Import
+# ============================================================================
+
+class ConfluenceImportRequest(BaseModel):
+    site_url: str
+    email: str
+    api_token: str
+    items: List[Dict[str, Any]]   # [{type: 'page'|'attachment', id, title, download_url?}]
+    user_id: Optional[str] = None
+    team_id: Optional[str] = None
+    department: Optional[str] = None
+
+
+@app.post("/api/confluence/test")
+async def confluence_test_connection(request: Request):
+    """Test Confluence credentials."""
+    body = await request.json()
+    try:
+        info = confluence_service.test_connection(
+            site_url=body['site_url'],
+            email=body['email'],
+            api_token=body['api_token'],
+        )
+        return {'ok': True, 'user': info}
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Connection failed: {str(e)}")
+
+
+# ============================================================================
+# Sync Source — Credential Validation & Resource Discovery
+# ============================================================================
+
+class S3CredsRequest(BaseModel):
+    aws_access_key_id: str
+    aws_secret_access_key: str
+    aws_session_token: Optional[str] = None
+    region: Optional[str] = "ap-south-1"
+
+
+@app.post("/api/sync/s3/list-buckets")
+async def list_s3_buckets(request: S3CredsRequest):
+    """
+    Validate AWS credentials and return list of accessible S3 buckets.
+    Called when user finishes entering S3 credentials in the sync setup form.
+    """
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+
+    try:
+        kwargs = {
+            "region_name": request.region or "ap-south-1",
+            "aws_access_key_id": request.aws_access_key_id,
+            "aws_secret_access_key": request.aws_secret_access_key,
+        }
+        if request.aws_session_token:
+            kwargs["aws_session_token"] = request.aws_session_token
+
+        s3 = boto3.client("s3", **kwargs)
+        response = s3.list_buckets()
+        buckets = [b["Name"] for b in response.get("Buckets", [])]
+        return {"ok": True, "buckets": buckets, "count": len(buckets)}
+
+    except ClientError as e:
+        code = e.response["Error"]["Code"]
+        msg = e.response["Error"]["Message"]
+        raise HTTPException(status_code=401, detail=f"{code}: {msg}")
+    except NoCredentialsError:
+        raise HTTPException(status_code=401, detail="Invalid AWS credentials")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/s3/list-prefixes")
+async def list_s3_prefixes(
+    bucket: str = Query(...),
+    prefix: str = Query(""),
+    request: S3CredsRequest = None
+):
+    """
+    List top-level folders (prefixes) in a bucket to let user pick a folder.
+    """
+    import boto3
+    from botocore.exceptions import ClientError
+
+    try:
+        kwargs = {
+            "region_name": request.region or "ap-south-1",
+            "aws_access_key_id": request.aws_access_key_id,
+            "aws_secret_access_key": request.aws_secret_access_key,
+        }
+        if request.aws_session_token:
+            kwargs["aws_session_token"] = request.aws_session_token
+
+        s3 = boto3.client("s3", **kwargs)
+        response = s3.list_objects_v2(
+            Bucket=bucket,
+            Prefix=prefix,
+            Delimiter="/",
+            MaxKeys=200,
+        )
+
+        folders = [
+            cp["Prefix"] for cp in response.get("CommonPrefixes", [])
+        ]
+        files = [
+            {
+                "key": obj["Key"],
+                "name": obj["Key"].split("/")[-1],
+                "size": obj["Size"],
+                "modified": obj["LastModified"].isoformat(),
+            }
+            for obj in response.get("Contents", [])
+            if not obj["Key"].endswith("/")
+        ]
+
+        return {
+            "ok": True,
+            "bucket": bucket,
+            "prefix": prefix,
+            "folders": folders,
+            "files": files[:50],  # preview only
+            "total_files": len(files),
+        }
+
+    except ClientError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ConfluenceCredsRequest(BaseModel):
+    site_url: str
+    email: str
+    api_token: str
+
+
+@app.post("/api/sync/confluence/list-spaces")
+async def list_confluence_spaces(request: ConfluenceCredsRequest):
+    """
+    Validate Confluence credentials and return list of spaces.
+    Supports both Confluence Cloud (atlassian.net) and Server/DC.
+    """
+    import requests as req
+    from requests.auth import HTTPBasicAuth
+
+    try:
+        base = request.site_url.strip().rstrip("/")
+        if not base.startswith("http"):
+            base = f"https://{base}"
+
+        # Remove /wiki suffix if user included it — we add it ourselves
+        if base.endswith("/wiki"):
+            base = base[:-5]
+
+        auth = HTTPBasicAuth(request.email, request.api_token)
+
+        # Try Confluence Cloud API v2 first (atlassian.net)
+        cloud_url = f"{base}/wiki/api/v2/spaces"
+        resp = req.get(
+            cloud_url,
+            auth=auth,
+            params={"limit": 100},
+            timeout=15,
+        )
+
+        # Fall back to legacy REST API (Server / Data Center)
+        if resp.status_code in (404, 403):
+            legacy_url = f"{base}/wiki/rest/api/space"
+            resp = req.get(
+                legacy_url,
+                auth=auth,
+                params={"limit": 100, "type": "global"},
+                timeout=15,
+            )
+
+        # Last resort — try without /wiki prefix (some self-hosted setups)
+        if resp.status_code in (404, 403):
+            legacy_url = f"{base}/rest/api/space"
+            resp = req.get(
+                legacy_url,
+                auth=auth,
+                params={"limit": 100},
+                timeout=15,
+            )
+
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Cloud API v2 returns {"results": [...]}
+        # Legacy API returns {"results": [...]} too, but with different fields
+        results = data.get("results", [])
+        spaces = [
+            {
+                "key": s.get("key") or s.get("id", ""),
+                "name": s.get("name", ""),
+            }
+            for s in results
+            if s.get("name")
+        ]
+
+        return {"ok": True, "spaces": spaces, "count": len(spaces)}
+
+    except req.exceptions.HTTPError as e:
+        status = e.response.status_code
+        try:
+            detail = e.response.json()
+            msg = detail.get("message") or detail.get("errorMessages", [None])[0] or str(detail)
+        except Exception:
+            msg = e.response.text[:300]
+        raise HTTPException(
+            status_code=status,
+            detail=f"Confluence {status}: {msg}. Check your API token has 'Read' permission on spaces."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/confluence/spaces")
+async def confluence_list_spaces(
+    site_url: str = Query(...),
+    email: str = Query(...),
+    api_token: str = Query(...),
+):
+    """List all accessible Confluence spaces."""
+    try:
+        spaces = confluence_service.list_spaces(site_url, email, api_token)
+        return {'spaces': spaces}
+    except Exception as e:
+        logger.error(f"Confluence list spaces failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/confluence/pages")
+async def confluence_list_pages(
+    site_url: str = Query(...),
+    email: str = Query(...),
+    api_token: str = Query(...),
+    space_key: str = Query(...),
+    parent_id: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+):
+    """List pages in a Confluence space."""
+    try:
+        pages = confluence_service.list_pages(site_url, email, api_token, space_key, parent_id, search)
+        return {'pages': pages}
+    except Exception as e:
+        logger.error(f"Confluence list pages failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/confluence/attachments")
+async def confluence_list_attachments(
+    site_url: str = Query(...),
+    email: str = Query(...),
+    api_token: str = Query(...),
+    page_id: str = Query(...),
+):
+    """List attachments on a Confluence page."""
+    try:
+        attachments = confluence_service.list_attachments(site_url, email, api_token, page_id)
+        return {'attachments': attachments}
+    except Exception as e:
+        logger.error(f"Confluence list attachments failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/confluence/import")
+async def import_from_confluence(request: ConfluenceImportRequest, background_tasks: BackgroundTasks):
+    """Import selected Confluence pages and/or attachments into the KB."""
+    imported = []
+    errors = []
+
+    custom_metadata = {
+        'user_id': request.user_id,
+        'team_id': request.team_id,
+        'department': request.department,
+        'source': 'confluence',
+    }
+
+    for item in request.items:
+        try:
+            item_type = item.get('type', 'page')
+            item_title = item.get('title', 'untitled')
+
+            if item_type == 'page':
+                content_bytes, filename = confluence_service.download_page_as_html(
+                    site_url=request.site_url,
+                    email=request.email,
+                    api_token=request.api_token,
+                    page_id=item['id'],
+                    page_title=item_title,
+                )
+                content_type = 'text/html'
+
+            elif item_type == 'attachment':
+                content_bytes = confluence_service.download_attachment(
+                    site_url=request.site_url,
+                    email=request.email,
+                    api_token=request.api_token,
+                    download_url=item['download_url'],
+                    filename=item_title,
+                )
+                filename = item_title
+                content_type = item.get('media_type', 'application/octet-stream')
+
+            else:
+                continue
+
+            # Upload to S3 KB bucket
+            extracted_metadata = metadata_extractor.extract_metadata(content_bytes, filename)
+            merged_metadata = {**extracted_metadata, **{k: v for k, v in custom_metadata.items() if v}}
+
+            result = upload_service.upload_to_s3(
+                file_content=content_bytes,
+                file_name=filename,
+                user_id=request.user_id or 'confluence',
+                metadata=merged_metadata,
+            )
+            s3_key = result.get('s3_key', f'docs/{filename}')
+
+            imported.append({
+                'id': item['id'],
+                'title': item_title,
+                'type': item_type,
+                'filename': filename,
+                's3_key': s3_key,
+            })
+            logger.info(f"Confluence import: {filename} → s3://{settings.S3_RAW_BUCKET}/{s3_key}")
+
+        except Exception as e:
+            logger.error(f"Confluence import failed for {item.get('title', item.get('id'))}: {e}")
+            errors.append({'id': item.get('id'), 'title': item.get('title', ''), 'error': str(e)})
+
+    if imported:
+        last = imported[-1]
+        background_tasks.add_task(upload_service.background_sync, last['s3_key'], last['filename'])
+
+    return {
+        'imported': imported,
+        'errors': errors,
+        'total': len(imported),
+        'message': f"Imported {len(imported)} item(s) from Confluence. KB sync started.",
+    }
 
 
 # ============================================================================
@@ -1452,6 +1924,163 @@ async def list_documents(
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
+# Scheduled Sync API
+# ============================================================================
+
+@app.post("/api/sync/configs")
+async def create_sync_config(body: SyncConfigCreate, db=Depends(get_db)):
+    """Create a new scheduled sync configuration."""
+    try:
+        from services.sync_service import sync_service
+        config = sync_service.create_config(
+            db=db,
+            user_id=body.user_id,
+            source_type=body.source_type,
+            display_name=body.display_name,
+            credentials=body.credentials,
+            schedule=body.schedule,
+            space_or_path=body.space_or_path,
+        )
+        return {"status": "created", "config": config}
+    except Exception as e:
+        logger.error(f"create_sync_config failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sync/configs")
+async def list_sync_configs(user_id: str = Query(...), db=Depends(get_db)):
+    """List all sync configurations for a user."""
+    try:
+        from services.sync_service import sync_service
+        configs = sync_service.list_configs(db=db, user_id=user_id)
+        return {"configs": configs, "count": len(configs)}
+    except Exception as e:
+        logger.error(f"list_sync_configs failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sync/configs/{config_id}")
+async def get_sync_config(config_id: str, user_id: str = Query(...), db=Depends(get_db)):
+    """Get a single sync configuration (credentials not returned)."""
+    try:
+        from services.sync_service import sync_service
+        config = sync_service.get_config(db=db, config_id=config_id, user_id=user_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+        return {"config": sync_service._config_to_dict(config)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"get_sync_config failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/sync/configs/{config_id}")
+async def delete_sync_config(config_id: str, user_id: str = Query(...), db=Depends(get_db)):
+    """Delete a sync configuration and all its tracker rows."""
+    try:
+        from services.sync_service import sync_service
+        deleted = sync_service.delete_config(db=db, config_id=config_id, user_id=user_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+        return {"status": "deleted", "config_id": config_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"delete_sync_config failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/sync/configs/{config_id}/pause")
+async def pause_sync_config(config_id: str, user_id: str = Query(...), db=Depends(get_db)):
+    """Pause a sync configuration so it is skipped by the scheduler."""
+    try:
+        from services.sync_service import sync_service
+        ok = sync_service.pause_config(db=db, config_id=config_id, user_id=user_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+        return {"status": "paused", "config_id": config_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"pause_sync_config failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/sync/configs/{config_id}/resume")
+async def resume_sync_config(config_id: str, user_id: str = Query(...), db=Depends(get_db)):
+    """Resume a paused sync configuration and schedule the next run."""
+    try:
+        from services.sync_service import sync_service
+        ok = sync_service.resume_config(db=db, config_id=config_id, user_id=user_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+        return {"status": "resumed", "config_id": config_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"resume_sync_config failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/configs/{config_id}/run")
+async def trigger_sync_config(
+    config_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Query(...),
+    db=Depends(get_db),
+):
+    """Trigger an immediate sync for a configuration (runs in background)."""
+    try:
+        from services.sync_service import sync_service
+        config = sync_service.get_config(db=db, config_id=config_id, user_id=user_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+
+        def _run_in_background():
+            from services.database import SessionLocal as _SessionLocal
+            bg_db = _SessionLocal()
+            try:
+                bg_config = sync_service.get_config(bg_db, config_id, user_id)
+                if bg_config:
+                    sync_service.run_sync(bg_db, bg_config, trigger='manual')
+            except Exception as e:
+                logger.error(f"Background sync failed for config {config_id}: {e}")
+            finally:
+                bg_db.close()
+
+        background_tasks.add_task(_run_in_background)
+        return {"status": "accepted", "config_id": config_id, "message": "Sync started in background"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"trigger_sync_config failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sync/configs/{config_id}/history")
+async def get_sync_history(
+    config_id: str,
+    user_id: str = Query(...),
+    limit: int = Query(20, ge=1, le=100),
+    db=Depends(get_db),
+):
+    """List recent run-level history for a sync configuration."""
+    try:
+        from services.sync_service import sync_service
+        config = sync_service.get_config(db=db, config_id=config_id, user_id=user_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Sync config not found")
+        runs = sync_service.get_run_history(db=db, config_id=config_id, user_id=user_id, limit=limit)
+        return {"config_id": config_id, "history": runs, "count": len(runs)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"get_sync_history failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # Architecture Info
 # ============================================================================
 
@@ -1503,6 +2132,218 @@ async def get_architecture():
         "auto_sync": "Hourly (configurable)",
         "access_control": "Metadata-based filtering"
     }
+
+
+# ============================================================================
+# Sync Source Endpoints
+# ============================================================================
+
+from services.sync_source_service import sync_source_service
+from services.sync_engine import run_sync
+from services.database import init_db
+
+# Initialize database tables on startup
+@app.on_event("startup")
+async def init_database():
+    """Create sync_sources and sync_history tables if they don't exist."""
+    try:
+        init_db()
+    except Exception as e:
+        logger.warning(f"Database init skipped (set DATABASE_URL in .env): {e}")
+
+
+class CreateSyncSourceRequest(BaseModel):
+    source_type: str          # 's3', 'google_drive', 'confluence'
+    name: str
+    credentials: Dict[str, Any]
+    target_path: str = ""
+    schedule_cron: str = "0 */6 * * *"
+
+
+class UpdateSyncSourceRequest(BaseModel):
+    name: Optional[str] = None
+    credentials: Optional[Dict[str, Any]] = None
+    target_path: Optional[str] = None
+    schedule_cron: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+@app.get("/api/sync-sources")
+async def list_sync_sources(user_id: str = Query(...)):
+    """List all sync sources for a user."""
+    try:
+        sources = sync_source_service.list_for_user(user_id)
+        return {"count": len(sources), "sources": sources}
+    except Exception as e:
+        logger.error(f"Failed to list sync sources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync-sources")
+async def create_sync_source(request: CreateSyncSourceRequest, user_id: str = Query(...)):
+    """Create a new sync source configuration."""
+    try:
+        source = sync_source_service.create(
+            user_id=user_id,
+            source_type=request.source_type,
+            name=request.name,
+            credentials=request.credentials,
+            target_path=request.target_path,
+            schedule_cron=request.schedule_cron,
+        )
+
+        # Schedule the sync job if scheduler is running
+        if scheduler and scheduler.running:
+            from apscheduler.triggers.cron import CronTrigger
+            scheduler.add_job(
+                run_sync,
+                trigger=CronTrigger.from_crontab(request.schedule_cron),
+                id=f"sync_{source['id']}",
+                args=[source["id"]],
+                replace_existing=True,
+            )
+            logger.info(f"Scheduled sync job for source: {source['id']}")
+
+        return source
+    except Exception as e:
+        logger.error(f"Failed to create sync source: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/sync-sources/{source_id}")
+async def update_sync_source(source_id: str, request: UpdateSyncSourceRequest):
+    """Update a sync source configuration."""
+    try:
+        updates = {k: v for k, v in request.dict().items() if v is not None}
+        result = sync_source_service.update(source_id, **updates)
+        if not result:
+            raise HTTPException(status_code=404, detail="Sync source not found")
+
+        # Reschedule if cron changed
+        if request.schedule_cron and scheduler and scheduler.running:
+            from apscheduler.triggers.cron import CronTrigger
+            try:
+                scheduler.reschedule_job(
+                    f"sync_{source_id}",
+                    trigger=CronTrigger.from_crontab(request.schedule_cron),
+                )
+            except Exception:
+                # Job might not exist yet
+                scheduler.add_job(
+                    run_sync,
+                    trigger=CronTrigger.from_crontab(request.schedule_cron),
+                    id=f"sync_{source_id}",
+                    args=[source_id],
+                    replace_existing=True,
+                )
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update sync source: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/sync-sources/{source_id}")
+async def delete_sync_source(source_id: str):
+    """Delete a sync source and remove its scheduled job."""
+    try:
+        success = sync_source_service.delete(source_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Sync source not found")
+
+        # Remove scheduled job
+        if scheduler and scheduler.running:
+            try:
+                scheduler.remove_job(f"sync_{source_id}")
+            except Exception:
+                pass
+
+        return {"message": "Sync source deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete sync source: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync-sources/{source_id}/test")
+async def test_sync_source(source_id: str):
+    """Test connection to a sync source (validates credentials)."""
+    try:
+        source = sync_source_service.get_with_credentials(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Sync source not found")
+
+        from services.connectors import get_connector
+        connector = get_connector(source["source_type"])
+        result = connector.test_connection(source["credentials"])
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to test sync source: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync-sources/{source_id}/sync-now")
+async def trigger_sync_now(source_id: str, background_tasks: BackgroundTasks):
+    """Manually trigger an immediate sync for a source."""
+    try:
+        source = sync_source_service.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Sync source not found")
+
+        # Run sync in background
+        background_tasks.add_task(run_sync, source_id)
+
+        return {
+            "message": f"Sync triggered for '{source['name']}'",
+            "source_id": source_id,
+            "status": "running",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to trigger sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sync-sources/{source_id}/history")
+async def get_sync_history(source_id: str, limit: int = Query(20, le=100)):
+    """Get sync run history for a source."""
+    try:
+        history = sync_source_service.get_history(source_id, limit=limit)
+        return {"count": len(history), "history": history}
+    except Exception as e:
+        logger.error(f"Failed to get sync history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Register all enabled sync sources on startup ──
+@app.on_event("startup")
+async def schedule_sync_sources():
+    """Load all enabled sync sources and schedule their cron jobs."""
+    if not scheduler or USE_EVENTBRIDGE:
+        return
+
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+        sources = sync_source_service.get_all_enabled()
+        for source in sources:
+            scheduler.add_job(
+                run_sync,
+                trigger=CronTrigger.from_crontab(source["schedule_cron"]),
+                id=f"sync_{source['id']}",
+                args=[source["id"]],
+                replace_existing=True,
+            )
+        logger.info(f"Scheduled {len(sources)} sync source(s) from database")
+    except Exception as e:
+        logger.warning(f"Could not load sync sources (DB may not be configured): {e}")
+
 
 if __name__ == "__main__":
     import uvicorn

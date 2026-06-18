@@ -50,6 +50,14 @@ class Settings:
     JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
     JWT_EXPIRE_HOURS = int(os.getenv('JWT_EXPIRE_HOURS', '8'))
 
+    # Database (RDS PostgreSQL)
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
+
+    # Encryption key for sync credentials (Fernet key — run once to generate:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', '')
+
     @classmethod
     def validate(cls):
         """Validate that all required settings are present"""

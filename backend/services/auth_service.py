@@ -118,21 +118,7 @@ class AuthService:
 
         return response.json()
 
-    def create_jwt_token(self, user_info: Dict[str, Any], drive_token: str) -> str:
-        """
-        Create JWT token with user info and Drive access token embedded
-
-        JWT Payload:
-            {
-                "sub": "google_user_id",
-                "email": "user@gmail.com",
-                "name": "John Doe",
-                "picture": "https://...",
-                "drive_token": "ya29.xxx",
-                "iat": 1234567890,
-                "exp": 1234596690  (8 hours from now)
-            }
-        """
+    def create_jwt_token(self, user_info: Dict[str, Any], drive_token: str, refresh_token: str = "") -> str:
         now = datetime.utcnow()
         expiration = now + timedelta(hours=self.jwt_expire_hours)
 
@@ -142,14 +128,29 @@ class AuthService:
             "name": user_info["name"],
             "picture": user_info.get("picture", ""),
             "drive_token": drive_token,
+            "drive_refresh_token": refresh_token,
             "iat": int(now.timestamp()),
             "exp": int(expiration.timestamp())
         }
 
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         logger.info(f"JWT created for user: {user_info['email']}")
-
         return token
+
+    def refresh_drive_token(self, refresh_token: str) -> str:
+        """Exchange a Google refresh token for a new access token."""
+        resp = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": self.google_client_id,
+                "client_secret": self.google_client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
 
     def verify_jwt_token(self, token: str) -> Dict[str, Any]:
         """

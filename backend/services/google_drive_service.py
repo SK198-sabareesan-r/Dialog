@@ -1,58 +1,49 @@
 """
-Google Drive Service - Download files from both personal Google Drive
-and Google Shared Drives (Team Drives).
+Google Drive Service — calls the Drive v3 REST API directly via requests.
 
-Personal Drive  → user's own My Drive
-Shared Drive    → organisation/team shared drives (Team Drives)
+Uses Bearer token auth (access_token from Google OAuth) without the
+google-auth library, which requires refresh_token + client credentials
+even for simple short-lived token usage.
 """
 
-from typing import Dict, Any, List, Optional
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from google.oauth2.credentials import Credentials
 import io
+import requests
+from typing import Dict, Any, List, Optional
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+DRIVE_API = 'https://www.googleapis.com/drive/v3'
+UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
+
 
 class GoogleDriveService:
-    """Service for interacting with Google Drive API.
 
-    Supports both personal (My Drive) and Shared Drives (Team Drives).
-    Pass drive_id to target a specific Shared Drive.
-    """
+    def _headers(self, access_token: str) -> dict:
+        return {'Authorization': f'Bearer {access_token}'}
 
-    def _get_service(self, access_token: str):
-        """Build and return a Google Drive API service client."""
-        credentials = Credentials(token=access_token)
-        return build('drive', 'v3', credentials=credentials)
+    def _get(self, access_token: str, path: str, params: dict = None) -> dict:
+        resp = requests.get(
+            f'{DRIVE_API}{path}',
+            headers=self._headers(access_token),
+            params=params or {},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     # ------------------------------------------------------------------
     # Shared Drive listing
     # ------------------------------------------------------------------
 
     def list_shared_drives(self, access_token: str) -> List[Dict[str, Any]]:
-        """
-        List all Shared Drives (Team Drives) the user has access to.
-
-        Returns:
-            List of shared drives with id and name.
-        """
         try:
-            service = self._get_service(access_token)
-
-            results = service.drives().list(
-                pageSize=100,
-                fields="drives(id, name, kind)"
-            ).execute()
-
-            drives = results.get('drives', [])
+            data = self._get(access_token, '/drives', {'pageSize': 100, 'fields': 'drives(id,name,kind)'})
+            drives = data.get('drives', [])
             logger.info(f"Found {len(drives)} shared drives")
             return drives
-
         except Exception as e:
-            logger.error(f"Failed to list shared drives: {str(e)}")
+            logger.error(f"Failed to list shared drives: {e}")
             raise
 
     # ------------------------------------------------------------------
@@ -64,114 +55,63 @@ class GoogleDriveService:
         access_token: str,
         drive_id: Optional[str] = None,
         page_size: int = 100,
-        query: Optional[str] = None
+        query: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        List files from personal Drive or a specific Shared Drive.
-
-        Args:
-            access_token: User's Google access token
-            drive_id:     Shared Drive ID (None = personal My Drive)
-            page_size:    Number of files to return
-            query:        Google Drive query string (optional)
-
-        Returns:
-            List of file metadata dicts
-        """
         try:
-            service = self._get_service(access_token)
-
             params = {
                 'pageSize': page_size,
-                'fields': "files(id, name, mimeType, size, modifiedTime, parents, driveId)",
-                'supportsAllDrives': True,
-                'includeItemsFromAllDrives': True,
+                'fields': 'files(id,name,mimeType,size,modifiedTime,parents,driveId)',
+                'supportsAllDrives': 'true',
+                'includeItemsFromAllDrives': 'true',
             }
-
             if query:
                 params['q'] = query
-
             if drive_id:
-                # Scope listing to a specific Shared Drive
                 params['driveId'] = drive_id
                 params['corpora'] = 'drive'
-                logger.info(f"Listing files in Shared Drive: {drive_id}")
             else:
-                # Personal My Drive
                 params['corpora'] = 'user'
-                logger.info("Listing files in personal My Drive")
 
-            results = service.files().list(**params).execute()
-            files = results.get('files', [])
-
+            data = self._get(access_token, '/files', params)
+            files = data.get('files', [])
             logger.info(f"Listed {len(files)} files")
             return files
-
         except Exception as e:
-            logger.error(f"Failed to list files: {str(e)}")
+            logger.error(f"Failed to list files: {e}")
             raise
 
     # ------------------------------------------------------------------
-    # Folder browsing (for UI navigation)
+    # Folder browsing
     # ------------------------------------------------------------------
 
     def browse_folder(
         self,
         access_token: str,
-        folder_id: str = "root",
-        drive_id: Optional[str] = None
+        folder_id: str = 'root',
+        drive_id: Optional[str] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Browse a folder and return separate lists of folders and files.
-
-        Used for frontend breadcrumb navigation in the Drive browser UI.
-
-        Args:
-            access_token: User's Google access token
-            folder_id:    Folder ID to browse (default: "root" for Drive root)
-            drive_id:     Shared Drive ID (None = personal My Drive)
-
-        Returns:
-            {
-                "folders": [{id, name, mimeType}, ...],
-                "files": [{id, name, mimeType, size, modifiedTime}, ...]
-            }
-        """
         try:
-            service = self._get_service(access_token)
-
-            # Build query to get items in this folder
-            query = f"'{folder_id}' in parents and trashed=false"
-
             params = {
-                'q': query,
+                'q': f"'{folder_id}' in parents and trashed=false",
                 'pageSize': 1000,
-                'fields': "files(id, name, mimeType, size, modifiedTime, iconLink)",
-                'orderBy': 'folder,name',  # Folders first, then files
-                'supportsAllDrives': True,
-                'includeItemsFromAllDrives': True,
+                'fields': 'files(id,name,mimeType,size,modifiedTime)',
+                'orderBy': 'folder,name',
+                'supportsAllDrives': 'true',
+                'includeItemsFromAllDrives': 'true',
             }
-
             if drive_id:
                 params['driveId'] = drive_id
                 params['corpora'] = 'drive'
             else:
                 params['corpora'] = 'user'
 
-            results = service.files().list(**params).execute()
-            items = results.get('files', [])
+            data = self._get(access_token, '/files', params)
+            items = data.get('files', [])
 
-            # Separate folders and files
-            folders = []
-            files = []
-
+            folders, files = [], []
             for item in items:
                 if item['mimeType'] == 'application/vnd.google-apps.folder':
-                    folders.append({
-                        'id': item['id'],
-                        'name': item['name'],
-                        'mimeType': item['mimeType']
-                    })
+                    folders.append({'id': item['id'], 'name': item['name'], 'mimeType': item['mimeType']})
                 else:
                     files.append({
                         'id': item['id'],
@@ -179,18 +119,12 @@ class GoogleDriveService:
                         'mimeType': item['mimeType'],
                         'size': item.get('size', '0'),
                         'modifiedTime': item.get('modifiedTime', ''),
-                        'iconLink': item.get('iconLink', '')
                     })
 
             logger.info(f"Browsed folder {folder_id}: {len(folders)} folders, {len(files)} files")
-
-            return {
-                "folders": folders,
-                "files": files
-            }
-
+            return {'folders': folders, 'files': files}
         except Exception as e:
-            logger.error(f"Failed to browse folder: {str(e)}")
+            logger.error(f"Failed to browse folder: {e}")
             raise
 
     # ------------------------------------------------------------------
@@ -201,82 +135,61 @@ class GoogleDriveService:
         self,
         file_id: str,
         access_token: str,
-        drive_id: Optional[str] = None
+        drive_id: Optional[str] = None,
     ) -> bytes:
-        """
-        Download a file from personal Drive or a Shared Drive.
-
-        Args:
-            file_id:      Google Drive file ID
-            access_token: User's Google access token
-            drive_id:     Shared Drive ID (None = personal My Drive)
-
-        Returns:
-            File content as bytes
-        """
         try:
-            service = self._get_service(access_token)
+            # First get the mime type to decide export vs direct download
+            meta = self._get(access_token, f'/files/{file_id}', {
+                'fields': 'id,name,mimeType',
+                'supportsAllDrives': 'true',
+            })
+            mime_type = meta.get('mimeType', '')
 
-            # supportsAllDrives=True is required for Shared Drive files
-            request = service.files().get_media(
-                fileId=file_id,
-                supportsAllDrives=True
-            )
+            # Google Workspace types need export
+            export_map = {
+                'application/vnd.google-apps.document':     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.google-apps.spreadsheet':  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.google-apps.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            }
 
-            file_buffer = io.BytesIO()
-            downloader = MediaIoBaseDownload(file_buffer, request)
+            if mime_type in export_map:
+                resp = requests.get(
+                    f'{DRIVE_API}/files/{file_id}/export',
+                    headers=self._headers(access_token),
+                    params={'mimeType': export_map[mime_type], 'supportsAllDrives': 'true'},
+                    timeout=120,
+                )
+            else:
+                resp = requests.get(
+                    f'{DRIVE_API}/files/{file_id}',
+                    headers=self._headers(access_token),
+                    params={'alt': 'media', 'supportsAllDrives': 'true'},
+                    timeout=120,
+                )
 
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
-                if status:
-                    logger.info(
-                        f"Download progress: {int(status.progress() * 100)}%"
-                    )
-
-            file_content = file_buffer.getvalue()
-            logger.info(
-                f"Downloaded file {file_id} "
-                f"({'Shared Drive: ' + drive_id if drive_id else 'My Drive'}) "
-                f"({len(file_content)} bytes)"
-            )
-
-            return file_content
-
+            resp.raise_for_status()
+            content = resp.content
+            logger.info(f"Downloaded file {file_id} ({len(content)} bytes)")
+            return content
         except Exception as e:
-            logger.error(f"Failed to download from Google Drive: {str(e)}")
+            logger.error(f"Failed to download from Google Drive: {e}")
             raise
 
     # ------------------------------------------------------------------
     # File metadata
     # ------------------------------------------------------------------
 
-    def get_file_metadata(
-        self,
-        file_id: str,
-        access_token: str
-    ) -> Dict[str, Any]:
-        """
-        Get file metadata from personal Drive or a Shared Drive.
-
-        Returns file name, mime type, size, etc.
-        """
+    def get_file_metadata(self, file_id: str, access_token: str) -> Dict[str, Any]:
         try:
-            service = self._get_service(access_token)
-
-            file = service.files().get(
-                fileId=file_id,
-                supportsAllDrives=True,
-                fields='id, name, mimeType, size, createdTime, modifiedTime, owners, driveId, parents'
-            ).execute()
-
-            logger.info(f"Retrieved metadata for file: {file.get('name')}")
-            return file
-
+            data = self._get(access_token, f'/files/{file_id}', {
+                'fields': 'id,name,mimeType,size,createdTime,modifiedTime,owners,driveId,parents',
+                'supportsAllDrives': 'true',
+            })
+            logger.info(f"Retrieved metadata for file: {data.get('name')}")
+            return data
         except Exception as e:
-            logger.error(f"Failed to get file metadata: {str(e)}")
+            logger.error(f"Failed to get file metadata: {e}")
             raise
 
 
-# Singleton instance
 google_drive_service = GoogleDriveService()

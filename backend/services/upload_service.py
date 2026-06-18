@@ -59,6 +59,7 @@ class UploadService:
         user_id: str,
         metadata: Dict[str, Any],
         bedrock_metadata: Optional[Dict[str, Any]] = None,
+        s3_key_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Store file in S3 with metadata and record it in the ingestion tracker.
@@ -71,10 +72,11 @@ class UploadService:
             bedrock_metadata: If provided, written as the Bedrock KB .metadata.json
                               file alongside the document. Must follow the format:
                               {"metadataAttributes": {"key": "value", ...}}
+            s3_key_override:  If provided, use this as the S3 key instead of the default.
+                              Used by sync engine for deterministic keys.
         """
-        # Store all files in docs folder without timestamp
-        # This allows ETag tracking to detect file updates
-        s3_key = f"docs/{file_name}"
+        # Use override if provided, otherwise default pattern
+        s3_key = s3_key_override or f"docs/{file_name}"
 
         # Sanitise metadata values → ASCII strings (S3 header requirement)
         string_metadata: Dict[str, str] = {}

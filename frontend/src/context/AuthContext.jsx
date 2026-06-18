@@ -7,8 +7,11 @@
  * - login/logout methods
  */
 
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
+import axios from 'axios';
+
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const AuthContext = createContext();
 
@@ -51,12 +54,37 @@ export const AuthProvider = ({ children }) => {
           picture: decoded.picture
         });
         setDriveToken(decoded.drive_token);
+        // Check if drive token will expire soon (within 5 min) and refresh proactively
+        if (decoded.drive_refresh_token) {
+          const driveExpiry = decoded.iat + 3600; // Google tokens expire in 1h
+          const now = Date.now() / 1000;
+          if (driveExpiry - now < 300) {
+            // Will refresh silently in background
+            setTimeout(() => refreshDriveToken(storedToken), 100);
+          }
+        }
       } catch (error) {
         console.error('Failed to decode token:', error);
         localStorage.removeItem('auth_token');
       }
     }
     setLoading(false);
+  }, []);
+
+  const refreshDriveToken = useCallback(async (currentJwt) => {
+    try {
+      const res = await axios.post(`${API_BASE}/api/auth/refresh-drive-token`, {
+        jwt_token: currentJwt || localStorage.getItem('auth_token'),
+      });
+      const newJwt = res.data.token;
+      localStorage.setItem('auth_token', newJwt);
+      setToken(newJwt);
+      setDriveToken(res.data.drive_token);
+      return res.data.drive_token;
+    } catch (err) {
+      console.warn('Drive token refresh failed:', err);
+      return null;
+    }
   }, []);
 
   const login = (jwtToken) => {
@@ -99,7 +127,8 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user,
     loading,
     login,
-    logout
+    logout,
+    refreshDriveToken,
   };
 
   return (
