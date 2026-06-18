@@ -158,8 +158,8 @@ class ChatSessionService:
             "id": session.id,
             "user_id": session.user_id,
             "title": session.title,
-            "created_at": session.created_at.isoformat() if session.created_at else None,
-            "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+            "created_at": session.created_at.isoformat() + 'Z' if session.created_at else None,
+            "updated_at": session.updated_at.isoformat() + 'Z' if session.updated_at else None,
         }
         if include_messages:
             result["messages"] = [self._message_to_dict(m) for m in session.messages]
@@ -173,7 +173,7 @@ class ChatSessionService:
             "citations": msg.citations,
             "language": msg.language,
             "duration_ms": msg.duration_ms,
-            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            "created_at": msg.created_at.isoformat() + 'Z' if msg.created_at else None,
         }
 
 

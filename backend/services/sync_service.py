@@ -377,7 +377,10 @@ class SyncService:
         creds = self.decrypt_credentials(config.credentials_enc)
         access_token = creds.get('access_token', '')
         refresh_token = creds.get('refresh_token')
-        drive_id = config.space_or_path or None
+        # space_or_path stores the folder_id selected by user
+        # drive_id (shared drive) is stored in credentials
+        folder_id = config.space_or_path or None
+        drive_id = creds.get('drive_id') or None
 
         # Attempt to refresh token when a refresh_token is available
         if refresh_token and settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET:
@@ -403,10 +406,11 @@ class SyncService:
             except Exception as e:
                 logger.warning(f"[sync_gdrive] Token refresh failed for config {config.id}: {e}")
 
-        # List all files in the drive
+        # List files in the specified folder (or whole drive if no folder set)
         files = google_drive_service.list_files(
             access_token=access_token,
             drive_id=drive_id,
+            folder_id=folder_id,
             page_size=1000,
         )
 

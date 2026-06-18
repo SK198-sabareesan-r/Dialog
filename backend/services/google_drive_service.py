@@ -54,18 +54,25 @@ class GoogleDriveService:
         self,
         access_token: str,
         drive_id: Optional[str] = None,
+        folder_id: Optional[str] = None,
         page_size: int = 100,
         query: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         try:
+            # Build query — filter by folder if specified
+            q_parts = ['trashed=false', "mimeType != 'application/vnd.google-apps.folder'"]
+            if folder_id and folder_id != 'root':
+                q_parts.append(f"'{folder_id}' in parents")
+            if query:
+                q_parts.append(query)
+
             params = {
                 'pageSize': page_size,
                 'fields': 'files(id,name,mimeType,size,modifiedTime,parents,driveId)',
                 'supportsAllDrives': 'true',
                 'includeItemsFromAllDrives': 'true',
+                'q': ' and '.join(q_parts),
             }
-            if query:
-                params['q'] = query
             if drive_id:
                 params['driveId'] = drive_id
                 params['corpora'] = 'drive'
@@ -74,7 +81,7 @@ class GoogleDriveService:
 
             data = self._get(access_token, '/files', params)
             files = data.get('files', [])
-            logger.info(f"Listed {len(files)} files")
+            logger.info(f"Listed {len(files)} files (folder_id={folder_id}, drive_id={drive_id})")
             return files
         except Exception as e:
             logger.error(f"Failed to list files: {e}")

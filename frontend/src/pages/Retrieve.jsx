@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Send, FileText, Loader, AlertCircle,
-  ChevronDown, ChevronUp, Sparkles, BookOpen, User,
+  Sparkles, BookOpen, User,
   Globe, Search, Zap, Languages,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -101,38 +101,70 @@ const STAGE_CONFIG = {
 // ---------------------------------------------------------------------------
 // User message bubble
 // ---------------------------------------------------------------------------
-const UserBubble = ({ text, picture }) => (
-  <div className="flex justify-end mb-5">
-    <div className="flex items-end gap-2.5 max-w-[75%]">
-      <div className="rounded-2xl rounded-br-md px-4 py-3 shadow-sm" style={{ background: DIALOG_RED }}>
-        <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">{text}</p>
+const UserBubble = ({ text, picture, timestamp }) => {
+  const formatTimestamp = (ts) => {
+    if (!ts) return new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const date = new Date(ts);
+    return date.toLocaleString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  return (
+    <div className="flex justify-end mb-5">
+      <div className="flex flex-col items-end max-w-[75%]">
+        <div className="flex items-end gap-2.5">
+          <div className="rounded-2xl rounded-br-md px-4 py-3 shadow-sm" style={{ background: DIALOG_RED }}>
+            <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">{text}</p>
+          </div>
+          {picture ? (
+            <div className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden shadow-sm" style={{ border: '2px solid #F3F4F6' }}>
+              <img src={picture} alt="You" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            </div>
+          ) : (
+            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: `${DIALOG_RED}12` }}>
+              <User className="w-3.5 h-3.5" style={{ color: DIALOG_RED }} />
+            </div>
+          )}
+        </div>
+        {/* Timestamp */}
+        <p className="text-xs mt-1 mr-9" style={{ color: '#9CA3AF' }}>
+          {formatTimestamp(timestamp)}
+        </p>
       </div>
-      {picture ? (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden shadow-sm" style={{ border: '2px solid #F3F4F6' }}>
-          <img src={picture} alt="You" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-        </div>
-      ) : (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: `${DIALOG_RED}12` }}>
-          <User className="w-3.5 h-3.5" style={{ color: DIALOG_RED }} />
-        </div>
-      )}
     </div>
-  </div>
-);
+  );
+};
 
 // ---------------------------------------------------------------------------
 // AI message bubble (streamed)
 // ---------------------------------------------------------------------------
-const AiBubble = ({ answer, answerEnglish, language, retrieval, citations, duration }) => {
-  const [showEnglish, setShowEnglish] = useState(false);
-  const [showSources, setShowSources] = useState(false);
-
-  const isTranslated = language?.detected && language.detected !== 'en';
-  const displayAnswer = (isTranslated && showEnglish) ? (answerEnglish || answer) : answer;
+const AiBubble = ({ answer, citations, timestamp }) => {
+  const displayAnswer = answer;
 
   const sourceDocuments = citations
     ? [...new Set(citations.map(c => c.source_file).filter(Boolean))]
     : [];
+
+  const formatTimestamp = (ts) => {
+    if (!ts) return new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const date = new Date(ts);
+    return date.toLocaleString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
 
   return (
     <div className="flex justify-start mb-5">
@@ -147,13 +179,6 @@ const AiBubble = ({ answer, answerEnglish, language, retrieval, citations, durat
             <div className="flex items-center gap-2 mb-3 pb-2" style={{ borderBottom: '1px solid #F3F4F6' }}>
               <Sparkles className="w-3.5 h-3.5" style={{ color: DIALOG_RED }} />
               <span className="text-xs font-semibold" style={{ color: DIALOG_RED }}>AI Answer</span>
-              <div className="ml-auto flex items-center gap-2">
-                {duration && (
-                  <span className="text-xs" style={{ color: '#C4C9D4' }}>
-                    {(duration / 1000).toFixed(1)}s
-                  </span>
-                )}
-              </div>
             </div>
 
             {/* Markdown content */}
@@ -162,111 +187,43 @@ const AiBubble = ({ answer, answerEnglish, language, retrieval, citations, durat
                 {displayAnswer || ''}
               </ReactMarkdown>
             </div>
-
-            {/* Language badge */}
-            {isTranslated && (
-              <div className="flex items-center gap-2 mt-3 pt-2" style={{ borderTop: '1px solid #F3F4F6' }}>
-                <Globe className="w-3 h-3" style={{ color: '#9CA3AF' }} />
-                <span className="text-xs" style={{ color: '#9CA3AF' }}>
-                  {showEnglish
-                    ? `Original answer in English — query was in ${language.name}`
-                    : `Answered in ${language.name} (translated from English)`
-                  }
-                </span>
-                {language.english_query && (
-                  <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#F3F4F6', color: '#6B7280' }}>
-                    EN: "{language.english_query}"
-                  </span>
-                )}
-              </div>
-            )}
           </div>
 
-          {/* Citations — always visible */}
-          {citations && citations.length > 0 && (
-            <div className="rounded-xl px-4 py-3" style={{ background: '#FAFBFC', border: '1px solid #E8EAF0' }}>
+          {/* Timestamp */}
+          <div className="flex justify-end mt-1">
+            <p className="text-xs" style={{ color: '#9CA3AF' }}>
+              {formatTimestamp(timestamp)}
+            </p>
+          </div>
+
+          {/* Citations — simplified to show only documents */}
+          {sourceDocuments.length > 0 && (
+            <div className="rounded-xl px-4 py-3 mt-2" style={{ background: '#FAFBFC', border: '1px solid #E8EAF0' }}>
               {/* Header */}
-              <div className="flex items-center gap-2 mb-2.5">
-                <BookOpen className="w-3.5 h-3.5" style={{ color: '#6B7280' }} />
-                <span className="text-xs font-semibold" style={{ color: '#374151' }}>
-                  Fetched from {sourceDocuments.length} document{sourceDocuments.length !== 1 ? 's' : ''}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#EFF6FF', color: '#3B82F6', border: '1px solid #DBEAFE' }}>
-                  {citations.length} chunk{citations.length !== 1 ? 's' : ''} matched
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5" style={{ background: '#EFF6FF', color: '#3B82F6', border: '1px solid #DBEAFE' }}>
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Knowledge Base
                 </span>
               </div>
 
-              {/* Document list — always shown */}
-              <div className="space-y-1.5 mb-2">
-                {citations.slice(0, showSources ? citations.length : 3).map((chunk, idx) => (
-                  <SourceChip key={idx} chunk={chunk} index={idx} />
+              {/* Document list — simple names only */}
+              <div className="space-y-1.5">
+                {sourceDocuments.map((docName, idx) => (
+                  <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#FFFFFF', border: '1px solid #E8EAF0' }}>
+                    <div className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center" style={{ background: `${DIALOG_RED}08` }}>
+                      <FileText className="w-3 h-3" style={{ color: DIALOG_RED }} />
+                    </div>
+                    <span className="text-xs font-medium truncate flex-1" style={{ color: '#343a40' }}>
+                      {docName}
+                    </span>
+                  </div>
                 ))}
               </div>
-
-              {/* Show more/less toggle if more than 3 */}
-              {citations.length > 3 && (
-                <button
-                  onClick={() => setShowSources(!showSources)}
-                  className="flex items-center gap-1 mt-1 text-xs font-medium transition-all"
-                  style={{ color: DIALOG_RED }}
-                >
-                  {showSources ? (
-                    <>Show less <ChevronUp className="w-3 h-3" /></>
-                  ) : (
-                    <>Show {citations.length - 3} more <ChevronDown className="w-3 h-3" /></>
-                  )}
-                </button>
-              )}
             </div>
           )}
         </div>
       </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Source chip — shows where the answer was fetched from
-// ---------------------------------------------------------------------------
-const SourceChip = ({ chunk, index }) => {
-  const [expanded, setExpanded] = useState(false);
-  const content = chunk.content?.text || '';
-  const truncated = content.length > 200 ? content.substring(0, 200) + '...' : content;
-  const scorePercent = chunk.score > 0 ? (chunk.score * 100).toFixed(0) : null;
-  const scoreColor = chunk.score > 0.7 ? '#059669' : chunk.score > 0.4 ? '#D97706' : '#9CA3AF';
-
-  return (
-    <div className="rounded-lg px-3 py-2.5" style={{ background: '#FFFFFF', border: '1px solid #E8EAF0' }}>
-      <div className="flex items-center gap-2">
-        <div className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center" style={{ background: `${DIALOG_RED}08` }}>
-          <FileText className="w-3 h-3" style={{ color: DIALOG_RED }} />
-        </div>
-        <span className="text-xs font-semibold truncate flex-1" style={{ color: '#343a40' }}>
-          {chunk.source_file || `Source ${index + 1}`}
-        </span>
-        {scorePercent && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <div className="w-10 h-1.5 rounded-full overflow-hidden" style={{ background: '#F3F4F6' }}>
-              <div className="h-full rounded-full" style={{ width: `${scorePercent}%`, background: scoreColor }} />
-            </div>
-            <span className="text-xs font-bold" style={{ color: scoreColor }}>
-              {scorePercent}%
-            </span>
-          </div>
-        )}
-      </div>
-      {content && (
-        <div className="mt-1.5 ml-7">
-          <p className="text-xs leading-relaxed" style={{ color: '#6B7280' }}>
-            {expanded ? content : truncated}
-          </p>
-          {content.length > 200 && (
-            <button onClick={() => setExpanded(!expanded)} className="text-xs font-medium mt-1" style={{ color: DIALOG_RED }}>
-              {expanded ? 'Show less' : 'Show more'}
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 };
@@ -371,14 +328,7 @@ const ErrorBubble = ({ message, onDismiss }) => (
 // ---------------------------------------------------------------------------
 // Welcome screen
 // ---------------------------------------------------------------------------
-const WelcomeScreen = ({ onSuggestionClick }) => {
-  const suggestions = [
-    'What policies do we have?',
-    'விடுமுறை கொள்கை என்ன?',
-    'Show recent reports',
-    'නිවාඩු ප්‍රතිපත්තිය',
-  ];
-
+const WelcomeScreen = () => {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center max-w-lg px-6">
@@ -388,24 +338,10 @@ const WelcomeScreen = ({ onSuggestionClick }) => {
         <h2 className="text-xl font-bold mb-2" style={{ color: '#343a40' }}>
           Knowledge Base Assistant
         </h2>
-        <p className="text-sm mb-8 leading-relaxed" style={{ color: '#6B7280' }}>
+        <p className="text-sm leading-relaxed" style={{ color: '#6B7280' }}>
           Ask questions about your documents in English, Sinhala, or Tamil.<br />
           I'll search your knowledge base and provide answers with cited sources.
         </p>
-        <div className="grid grid-cols-2 gap-2">
-          {suggestions.map((q) => (
-            <button
-              key={q}
-              onClick={() => onSuggestionClick(q)}
-              className="px-4 py-2.5 rounded-xl text-xs font-medium text-left transition-all hover:shadow-sm"
-              style={{ background: '#F9FAFB', color: '#4B5563', border: '1px solid #E8EAF0' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = DIALOG_RED; e.currentTarget.style.color = DIALOG_RED; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#E8EAF0'; e.currentTarget.style.color = '#4B5563'; }}
-            >
-              {q}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -450,13 +386,14 @@ const Retrieve = () => {
       prevSessionRef.current = null;
       setMessages([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatSessions?.activeSessionId]);
 
   const handleSend = useCallback(async (overrideQuery) => {
     const trimmed = (overrideQuery || query).trim();
     if (!trimmed || isStreaming) return;
 
-    setMessages(prev => [...prev, { role: 'user', text: trimmed }]);
+    setMessages(prev => [...prev, { role: 'user', text: trimmed, timestamp: new Date().toISOString() }]);
     setQuery('');
     setIsStreaming(true);
     setStreamStages([]);
@@ -546,6 +483,7 @@ const Retrieve = () => {
         retrieval,
         citations,
         duration,
+        timestamp: new Date().toISOString(),
       }]);
 
       // Refresh sessions list in sidebar
@@ -575,10 +513,6 @@ const Retrieve = () => {
     setMessages(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleSuggestion = (text) => {
-    handleSend(text);
-  };
-
   return (
     <div className="flex flex-col h-screen" style={{ background: '#F8F9FB' }}>
       {/* Header */}
@@ -595,12 +529,13 @@ const Retrieve = () => {
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6">
-        <div className="max-w-3xl mx-auto">
-          {messages.length === 0 && !isStreaming && <WelcomeScreen onSuggestionClick={handleSuggestion} />}
-
-          {messages.map((msg, idx) => {
-            if (msg.role === 'user') return <UserBubble key={idx} text={msg.text} picture={user?.picture} />;
+      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 flex flex-col">
+        {messages.length === 0 && !isStreaming ? (
+          <WelcomeScreen />
+        ) : (
+          <div className="max-w-3xl mx-auto w-full">
+            {messages.map((msg, idx) => {
+            if (msg.role === 'user') return <UserBubble key={idx} text={msg.text} picture={user?.picture} timestamp={msg.timestamp} />;
             if (msg.role === 'assistant') {
               return (
                 <AiBubble
@@ -611,6 +546,7 @@ const Retrieve = () => {
                   retrieval={msg.retrieval}
                   citations={msg.citations}
                   duration={msg.duration}
+                  timestamp={msg.timestamp}
                 />
               );
             }
@@ -620,18 +556,19 @@ const Retrieve = () => {
             return null;
           })}
 
-          {isStreaming && (
-            <StreamingProgress stages={streamStages} streamedText={streamedText} />
-          )}
+            {isStreaming && (
+              <StreamingProgress stages={streamStages} streamedText={streamedText} />
+            )}
 
-          <div ref={messagesEndRef} />
-        </div>
+            <div ref={messagesEndRef} />
+          </div>
+        )}
       </div>
 
       {/* Input area */}
       <div className="flex-shrink-0 border-t bg-white px-4 md:px-6 py-4" style={{ borderColor: '#E8EAF0' }}>
         <div className="max-w-3xl mx-auto">
-          <div className="flex items-end gap-3">
+          <div className="flex items-center gap-3">
             <div className="relative flex-1">
               <textarea
                 ref={inputRef}
@@ -653,7 +590,7 @@ const Retrieve = () => {
             <button
               onClick={() => handleSend()}
               disabled={isStreaming || !query.trim()}
-              className="flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center transition-all shadow-sm"
+              className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-sm"
               style={{
                 background: (isStreaming || !query.trim()) ? '#E5E7EB' : DIALOG_RED,
                 cursor: (isStreaming || !query.trim()) ? 'not-allowed' : 'pointer',
@@ -661,7 +598,7 @@ const Retrieve = () => {
             >
               {isStreaming
                 ? <Loader className="w-5 h-5 animate-spin text-white" />
-                : <Send className="w-4.5 h-4.5 text-white" />
+                : <Send className="w-5 h-5 text-white" />
               }
             </button>
           </div>
