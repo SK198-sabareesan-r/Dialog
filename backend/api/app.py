@@ -545,6 +545,7 @@ async def upload_direct(
             upload_service.background_sync,
             s3_key=result['s3_key'],
             filename=file.filename,
+            etag=result['etag'],
         )
 
         duration_ms = round((time.time() - start_time) * 1000, 2)
@@ -1192,13 +1193,61 @@ async def query_knowledge_base_stream(request: QueryRequest):
             await asyncio.sleep(0)
 
             from services.translation_service import translation_service, SUPPORTED_LANGUAGES
+            from utils.greeting_detector import greeting_detector
+            from services.conversational_service import conversational_service
+
             detected_lang = translation_service.detect_language(request.query)
             lang_name = SUPPORTED_LANGUAGES.get(detected_lang, 'Unknown')
 
             yield f"data: {json.dumps({'type': 'stage', 'stage': 'language_detected', 'message': f'Language: {lang_name}', 'language': detected_lang})}\n\n"
             await asyncio.sleep(0)
 
-            # Stage 2: Translating if needed
+            # Stage 2: Check if it's a greeting/conversational message
+            is_greeting, greeting_type = greeting_detector.is_greeting(request.query, detected_lang)
+
+            if is_greeting:
+                # Handle as conversational message - skip KB search
+                yield f"data: {json.dumps({'type': 'stage', 'stage': 'generating', 'message': 'Generating response...'})}\n\n"
+                await asyncio.sleep(0)
+
+                # Generate conversational response
+                answer_parts = []
+                for text_chunk in conversational_service.generate_response(
+                    query=request.query,
+                    greeting_type=greeting_type,
+                    language=detected_lang
+                ):
+                    answer_parts.append(text_chunk)
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': text_chunk})}\n\n"
+                    await asyncio.sleep(0.03)
+
+                answer = ''.join(answer_parts)
+                duration_ms = round((time.time() - start_time_s) * 1000, 2)
+
+                # Send done event (no citations for greetings)
+                yield f"data: {json.dumps({'type': 'done', 'language': {'detected': detected_lang, 'name': lang_name}, 'retrieval': {}, 'duration_ms': duration_ms}, default=str)}\n\n"
+
+                # Save to chat session if session_id provided
+                if request.session_id and request.user_id:
+                    try:
+                        db = SessionLocal()
+                        chat_session_service.add_message(
+                            db=db,
+                            user_id=request.user_id,
+                            session_id=request.session_id,
+                            user_text=request.query,
+                            assistant_answer=answer,
+                            citations=[],
+                            language={'detected': detected_lang, 'name': lang_name},
+                            duration_ms=duration_ms,
+                        )
+                        db.close()
+                    except Exception as save_err:
+                        logger.warning(f"Failed to save greeting message to session: {save_err}")
+
+                return  # Exit early - no KB search needed
+
+            # Stage 3: Translating if needed (only for non-greetings)
             english_query = request.query
             if not translation_service.is_english(detected_lang):
                 yield f"data: {json.dumps({'type': 'stage', 'stage': 'translating', 'message': f'Translating {lang_name} → English...', 'original': request.query, 'from_lang': lang_name})}\n\n"
@@ -1207,11 +1256,11 @@ async def query_knowledge_base_stream(request: QueryRequest):
                 yield f"data: {json.dumps({'type': 'stage', 'stage': 'translated', 'message': f'Translated: \"{english_query}\"', 'translated_query': english_query, 'from_lang': lang_name, 'to_lang': 'English'})}\n\n"
                 await asyncio.sleep(0)
 
-            # Stage 3: Searching knowledge base
+            # Stage 4: Searching knowledge base
             yield f"data: {json.dumps({'type': 'stage', 'stage': 'searching', 'message': 'Searching knowledge base...'})}\n\n"
             await asyncio.sleep(0)
 
-            # Stage 4: Generating answer
+            # Stage 5: Generating answer
             yield f"data: {json.dumps({'type': 'stage', 'stage': 'generating', 'message': 'Generating answer from sources...'})}\n\n"
             await asyncio.sleep(0)
 
@@ -1227,7 +1276,7 @@ async def query_knowledge_base_stream(request: QueryRequest):
                 language=request.language,
             )
 
-            # Stage 5: Stream the answer word-by-word
+            # Stage 6: Stream the answer word-by-word
             answer = result.get('answer', '')
             if answer:
                 yield f"data: {json.dumps({'type': 'stage', 'stage': 'streaming', 'message': 'Answer ready'})}\n\n"
@@ -1244,7 +1293,7 @@ async def query_knowledge_base_stream(request: QueryRequest):
                         buffer = []
                         await asyncio.sleep(0.03)
 
-            # Stage 6: Send sources (only fields the frontend needs)
+            # Stage 7: Send sources (only fields the frontend needs)
             raw_citations = result.get('results', [])
             if raw_citations:
                 clean_citations = []
@@ -1258,7 +1307,7 @@ async def query_knowledge_base_stream(request: QueryRequest):
                 yield f"data: {json.dumps({'type': 'sources', 'citations': clean_citations})}\n\n"
                 await asyncio.sleep(0)
 
-            # Stage 7: Done with metadata
+            # Stage 8: Done with metadata
             duration_ms = round((time.time() - start_time_s) * 1000, 2)
             yield f"data: {json.dumps({'type': 'done', 'language': result.get('language', {}), 'retrieval': result.get('retrieval', {}), 'duration_ms': duration_ms}, default=str)}\n\n"
 

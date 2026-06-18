@@ -3,7 +3,7 @@ import {
   Upload as UploadIcon, File, Loader, CheckCircle, FileText,
   Image, FileSpreadsheet, AlertTriangle, Info, X,
   HardDrive, Database, FolderOpen, Folder, ChevronRight,
-  Home, RefreshCw, Link2, Clock
+  Home, RefreshCw, Link2, Clock, Sparkles
 } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -196,14 +196,14 @@ const SyncStatusCard = ({ s3Key, filename }) => {
 const ResultPanel = ({ result, error, onDismissError }) => (
   <>
     {result && (
-      <div className="dialog-card p-4 mt-4" style={{ borderLeft: `4px solid ${RED}`, background: '#FFF5F5' }}>
+      <div className="dialog-card p-4 mt-4" style={{ borderLeft: '4px solid #059669', background: '#ECFDF5' }}>
         <div className="flex gap-3">
-          <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: RED }} />
+          <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#059669' }} />
           <div>
             <p className="text-sm font-semibold" style={{ color: '#1A1A2E' }}>Success</p>
             <p className="text-xs mt-1" style={{ color: '#6B7280' }}>{result.message || 'Completed'}</p>
-            {result.s3_key && <p className="text-xs mt-1 font-mono break-all" style={{ color: RED }}>{result.s3_key}</p>}
-            {result.ingestion_job_id && <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>Job: <span className="font-mono" style={{ color: RED }}>{result.ingestion_job_id}</span></p>}
+            {result.s3_key && <p className="text-xs mt-1 font-mono break-all" style={{ color: '#059669' }}>{result.s3_key}</p>}
+            {result.ingestion_job_id && <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>Job: <span className="font-mono" style={{ color: '#059669' }}>{result.ingestion_job_id}</span></p>}
           </div>
         </div>
       </div>
@@ -408,9 +408,9 @@ const SharedDriveTab = () => {
   return (
     <div className="space-y-4">
       {/* Connected banner */}
-      <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl" style={{ background: '#FFF5F5', border: `1px solid ${RED}` }}>
-        <CheckCircle className="w-4 h-4" style={{ color: RED }} />
-        <span className="text-sm font-semibold" style={{ color: RED }}>Google Drive connected</span>
+      <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl" style={{ background: '#ECFDF5', border: '1px solid #059669' }}>
+        <CheckCircle className="w-4 h-4" style={{ color: '#059669' }} />
+        <span className="text-sm font-semibold" style={{ color: '#059669' }}>Google Drive connected</span>
         <span className="text-xs" style={{ color: '#6B7280' }}>— {user?.email}</span>
       </div>
 
@@ -763,7 +763,7 @@ const PublicUrlPane = ({ user }) => {
 
       {/* Results */}
       {results && (
-        <div className="dialog-card p-4" style={{ borderLeft: `4px solid ${RED}`, background: '#FFF5F5' }}>
+        <div className="dialog-card p-4" style={{ borderLeft: '4px solid #059669', background: '#ECFDF5' }}>
           <p className="text-sm font-semibold mb-2" style={{ color: '#1A1A2E' }}>
             {results.imported} / {results.total} imported successfully
           </p>
@@ -771,12 +771,12 @@ const PublicUrlPane = ({ user }) => {
             {results.results?.map((r, i) => (
               <div key={i} className="flex items-start gap-2">
                 {r.status === 'success'
-                  ? <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: RED }} />
+                  ? <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#059669' }} />
                   : <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#DC2626' }} />}
                 <div className="min-w-0">
                   <p className="text-xs font-mono truncate" style={{ color: '#6B7280' }}>{r.url}</p>
                   {r.status === 'success'
-                    ? <p className="text-xs" style={{ color: RED }}>→ {r.s3_key}</p>
+                    ? <p className="text-xs" style={{ color: '#059669' }}>→ {r.s3_key}</p>
                     : <p className="text-xs" style={{ color: '#DC2626' }}>{r.error}</p>}
                 </div>
               </div>
@@ -802,98 +802,359 @@ const PublicUrlPane = ({ user }) => {
   );
 };
 
-// ── Web Upload Tab ────────────────────────────────────────────────────────────
+// ── File Upload Progress Tracker ──────────────────────────────────────────────
+const FileProgressCard = ({ file, onRemove, disabled }) => {
+  const { name, size, progress = 0, stage = 'pending', error, s3_key, note } = file;
+  const Icon = getFileIcon(name);
+
+  const stageConfig = {
+    pending:       { label: 'Ready to upload',           color: '#9CA3AF', icon: Clock },
+    uploading:     { label: 'Uploading to S3',           color: RED, icon: UploadIcon },
+    extracting:    { label: 'Extracting metadata',       color: RED, icon: FileText },
+    tagging:       { label: 'Generating AI tags',        color: RED, icon: Sparkles },
+    syncing:       { label: 'Triggering KB sync',        color: RED, icon: Database },
+    kb_syncing:    { label: 'Syncing to Knowledge Base', color: '#D97706', icon: Database },
+    kb_complete:   { label: 'Ready for queries',         color: '#059669', icon: CheckCircle },
+    complete:      { label: 'Complete',                  color: '#059669', icon: CheckCircle },
+    failed:        { label: 'Failed',                    color: '#DC2626', icon: AlertTriangle },
+  };
+
+  const cfg = stageConfig[stage] || stageConfig.pending;
+
+  return (
+    <div className="rounded-lg p-3 transition-all" style={{ background: '#FAFBFC', border: '1px solid #E8EAF0' }}>
+      <div className="flex items-start gap-3">
+        <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: stage === 'failed' ? '#DC2626' : stage === 'complete' ? '#059669' : stage !== 'pending' ? RED : '#9CA3AF' }} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: '#1A1A2E' }}>{name}</p>
+              <p className="text-xs" style={{ color: '#9CA3AF' }}>{fmt(size)}</p>
+            </div>
+            {!disabled && stage === 'pending' && (
+              <button
+                onClick={onRemove}
+                className="flex-shrink-0 p-1 rounded transition-colors hover:bg-red-50"
+                style={{ color: '#9CA3AF' }}
+                onMouseEnter={e => e.currentTarget.style.color = RED}
+                onMouseLeave={e => e.currentTarget.style.color = '#9CA3AF'}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Stage indicator */}
+          <div className="flex items-center gap-2 mt-2">
+            {stage !== 'kb_complete' && stage !== 'complete' && stage !== 'failed' && (
+              <Loader className="w-3 h-3 animate-spin" style={{ color: cfg.color }} />
+            )}
+            {(stage === 'kb_complete' || stage === 'complete') && <CheckCircle className="w-3 h-3" style={{ color: cfg.color }} />}
+            {stage === 'failed' && <AlertTriangle className="w-3 h-3" style={{ color: cfg.color }} />}
+            <span className="text-xs font-medium" style={{ color: cfg.color }}>{cfg.label}</span>
+            {stage === 'uploading' && progress > 0 && (
+              <span className="text-xs ml-auto" style={{ color: '#9CA3AF' }}>{progress}%</span>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {(stage === 'uploading' || stage === 'extracting' || stage === 'tagging' || stage === 'syncing' || stage === 'kb_syncing') && (
+            <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: '#E5E7EB' }}>
+              {stage === 'uploading' ? (
+                <div className="h-full rounded-full transition-all" style={{ background: cfg.color, width: `${progress}%` }} />
+              ) : (
+                <div className="h-full rounded-full animate-pulse" style={{ background: cfg.color, width: '70%' }} />
+              )}
+            </div>
+          )}
+
+          {/* Error message */}
+          {error && (
+            <p className="text-xs mt-2" style={{ color: '#DC2626' }}>{error}</p>
+          )}
+
+          {/* Note message */}
+          {note && !error && (
+            <p className="text-xs mt-2" style={{ color: '#D97706' }}>{note}</p>
+          )}
+
+          {/* S3 key on complete */}
+          {s3_key && (stage === 'kb_complete' || stage === 'complete') && (
+            <p className="text-xs mt-1 font-mono truncate" style={{ color: '#059669' }}>✓ {s3_key}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Web Upload Tab (Multi-file) ──────────────────────────────────────────────
 const WebUploadTab = () => {
   const { user } = useAuth();
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [globalError, setGlobalError] = useState(null);
 
   const validateFile = (f) => {
-    if (!f) return false;
-    if (f.size > MAX_FILE_SIZE) { setError('File exceeds 500MB limit'); return false; }
+    if (f.size > MAX_FILE_SIZE) return `File exceeds 500MB limit`;
     const ext = f.name.split('.').pop().toLowerCase();
-    if (!['pdf','doc','docx','txt','xlsx','xls','csv','png','jpg','jpeg','gif','webp','mp4','mp3','wav'].includes(ext)) {
-      setError(`Unsupported type: .${ext}`); return false;
+    if (!['pdf','doc','docx','txt','xlsx','xls','csv','html','htm','png','jpg','jpeg','gif','webp','mp4','avi','mov','mkv','mp3','wav'].includes(ext)) {
+      return `Unsupported type: .${ext}`;
     }
-    return true;
+    return null;
   };
 
-  const pickFile = (f) => { setResult(null); setError(null); setProgress(0); if (validateFile(f)) setFile(f); };
-
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true); setError(null); setResult(null); setProgress(0);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('user_id', user?.email || 'guest');
-      const res = await axios.post(`${API_BASE}/api/upload/direct`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000,
-        onUploadProgress: (e) => setProgress(Math.round((e.loaded * 100) / e.total)),
-      });
-      setResult(res.data); setFile(null); setProgress(0);
-    } catch (e) { setError(e.response?.data?.detail || e.message || 'Upload failed'); }
-    finally { setUploading(false); }
+  const addFiles = (newFiles) => {
+    const validFiles = Array.from(newFiles).map(f => {
+      const error = validateFile(f);
+      return {
+        id: `${f.name}-${Date.now()}-${Math.random()}`,
+        file: f,
+        name: f.name,
+        size: f.size,
+        progress: 0,
+        stage: error ? 'failed' : 'pending',
+        error: error || null,
+      };
+    });
+    setFiles(prev => [...prev, ...validFiles]);
+    setGlobalError(null);
   };
 
-  const FileIcon = file ? getFileIcon(file.name) : UploadIcon;
+  const removeFile = (id) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const updateFileProgress = (id, updates) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  };
+
+  const handleUploadAll = async () => {
+    const pendingFiles = files.filter(f => f.stage === 'pending');
+    if (pendingFiles.length === 0) return;
+
+    setUploading(true);
+    setGlobalError(null);
+
+    for (const fileItem of pendingFiles) {
+      try {
+        // Stage 1: Uploading
+        updateFileProgress(fileItem.id, { stage: 'uploading', progress: 0 });
+
+        const form = new FormData();
+        form.append('file', fileItem.file);
+        form.append('user_id', user?.email || 'guest');
+
+        const res = await axios.post(`${API_BASE}/api/upload/direct`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000,
+          onUploadProgress: (e) => {
+            const pct = Math.round((e.loaded * 100) / e.total);
+            updateFileProgress(fileItem.id, { progress: pct });
+          },
+        });
+
+        // Simulate metadata extraction stages
+        updateFileProgress(fileItem.id, { stage: 'extracting', progress: 100 });
+        await new Promise(r => setTimeout(r, 800));
+
+        updateFileProgress(fileItem.id, { stage: 'tagging' });
+        await new Promise(r => setTimeout(r, 600));
+
+        updateFileProgress(fileItem.id, { stage: 'syncing' });
+        await new Promise(r => setTimeout(r, 400));
+
+        // Poll KB sync status
+        const s3Key = res.data.s3_key;
+        updateFileProgress(fileItem.id, {
+          stage: 'kb_syncing',
+          s3_key: s3Key,
+          progress: 100
+        });
+
+        // Poll for latest KB sync job status
+        let kbComplete = false;
+        let pollAttempts = 0;
+        const maxPollAttempts = 30; // 30 attempts * 2s = 60s max wait
+
+        while (!kbComplete && pollAttempts < maxPollAttempts) {
+          await new Promise(r => setTimeout(r, 2000)); // Poll every 2 seconds
+          pollAttempts++;
+
+          try {
+            const statusRes = await axios.get(`${API_BASE}/api/kb/sync/latest`);
+            const status = statusRes.data?.status;
+
+            if (status === 'COMPLETE') {
+              kbComplete = true;
+              updateFileProgress(fileItem.id, {
+                stage: 'kb_complete',
+                s3_key: s3Key,
+                progress: 100
+              });
+            } else if (status === 'FAILED') {
+              updateFileProgress(fileItem.id, {
+                stage: 'failed',
+                error: 'KB sync failed',
+                s3_key: s3Key
+              });
+              break;
+            }
+            // else keep polling (STARTING, IN_PROGRESS)
+          } catch (pollErr) {
+            // If polling fails, assume sync is still running in background
+            console.warn('KB sync polling failed:', pollErr);
+            break;
+          }
+        }
+
+        // If polling timed out but no error, still mark as complete
+        if (!kbComplete && pollAttempts >= maxPollAttempts) {
+          updateFileProgress(fileItem.id, {
+            stage: 'kb_complete',
+            s3_key: s3Key,
+            progress: 100,
+            note: 'Sync in progress (taking longer than usual)'
+          });
+        }
+
+      } catch (e) {
+        updateFileProgress(fileItem.id, {
+          stage: 'failed',
+          error: e.response?.data?.detail || e.message || 'Upload failed'
+        });
+      }
+    }
+
+    setUploading(false);
+  };
+
+  const clearCompleted = () => {
+    setFiles(prev => prev.filter(f => f.stage !== 'complete' && f.stage !== 'kb_complete'));
+  };
+
+  const completedCount = files.filter(f => f.stage === 'complete' || f.stage === 'kb_complete').length;
+  const failedCount = files.filter(f => f.stage === 'failed').length;
+  const pendingCount = files.filter(f => f.stage === 'pending').length;
 
   return (
     <div className="space-y-4">
-      <div onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) pickFile(f); }}
+      {/* Drop Zone */}
+      <div
+        onDrop={(e) => { e.preventDefault(); setIsDragging(false); addFiles(e.dataTransfer.files); }}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         className="rounded-xl p-10 text-center transition-all"
-        style={{ border: `2px dashed ${error ? '#DC2626' : file ? '#059669' : isDragging ? RED : '#E8EAF0'}`, background: file ? '#ECFDF5' : isDragging ? '#FEF9F9' : '#FAFBFC' }}>
-        {file ? (
-          <div className="flex flex-col items-center">
-            <FileIcon className="w-10 h-10 mb-3" style={{ color: RED }} />
-            <p className="font-semibold mb-1" style={{ color: '#1A1A2E' }}>{file.name}</p>
-            <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>{fmt(file.size)}</p>
-            {progress > 0 && progress < 100 && (
-              <div className="w-full max-w-xs mb-4">
-                <div className="h-2 rounded-full" style={{ background: '#E5E7EB' }}>
-                  <div className="h-full rounded-full" style={{ background: RED, width: `${progress}%`, transition: 'width 0.3s' }} />
-                </div>
-                <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>{progress}%</p>
+        style={{ border: `2px dashed ${isDragging ? RED : '#E8EAF0'}`, background: isDragging ? '#FEF9F9' : '#FAFBFC' }}
+      >
+        <div className="inline-flex p-5 rounded-full mb-4" style={{ background: 'rgba(228,0,43,0.08)' }}>
+          <UploadIcon className="w-10 h-10" style={{ color: RED }} />
+        </div>
+        <p className="font-semibold text-base mb-2" style={{ color: '#1A1A2E' }}>
+          Drag & drop your files here
+        </p>
+        <p className="text-sm mb-4" style={{ color: '#9CA3AF' }}>
+          or browse from your computer (multiple files supported)
+        </p>
+        <label className="inline-block px-6 py-2.5 rounded-lg font-semibold text-white text-sm cursor-pointer" style={{ background: RED }}>
+          Browse Files
+          <input
+            type="file"
+            multiple
+            onChange={(e) => addFiles(e.target.files)}
+            className="hidden"
+            accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.mp4,.avi,.mov,.mkv,.mp3,.wav"
+          />
+        </label>
+        <p className="text-xs mt-4" style={{ color: '#C4C9D4' }}>
+          PDF, DOCX, HTML, JPG, PNG, MP4, AVI, Video Formats, Excel · Max 500MB per file
+        </p>
+      </div>
+
+      {/* Files List */}
+      {files.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold" style={{ color: '#1A1A2E' }}>
+              {files.length} file{files.length !== 1 ? 's' : ''} selected
+            </p>
+            {completedCount > 0 && (
+              <button
+                onClick={clearCompleted}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all"
+                style={{ color: '#6B7280', background: '#F3F4F6' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#FFF5F5'; e.currentTarget.style.color = RED; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#F3F4F6'; e.currentTarget.style.color = '#6B7280'; }}
+              >
+                Clear {completedCount} completed
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {files.map(file => (
+              <FileProgressCard
+                key={file.id}
+                file={file}
+                onRemove={() => removeFile(file.id)}
+                disabled={uploading}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Upload Button */}
+      {pendingCount > 0 && (
+        <button
+          onClick={handleUploadAll}
+          disabled={uploading}
+          className="w-full py-3 text-base rounded-lg font-semibold text-white flex items-center justify-center gap-2 transition-all"
+          style={{
+            background: uploading ? '#E5E7EB' : RED,
+            cursor: uploading ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {uploading ? (
+            <>
+              <Loader className="w-5 h-5 animate-spin" />
+              Uploading {files.filter(f => f.stage !== 'pending' && f.stage !== 'complete' && f.stage !== 'failed').length}/{pendingCount} files...
+            </>
+          ) : (
+            <>
+              <UploadIcon className="w-5 h-5" />
+              Upload {pendingCount} file{pendingCount !== 1 ? 's' : ''}
+            </>
+          )}
+        </button>
+      )}
+
+      {/* Summary */}
+      {(completedCount > 0 || failedCount > 0) && (
+        <div className="rounded-lg p-3" style={{ background: '#F9FAFB', border: '1px solid #E8EAF0' }}>
+          <div className="flex items-center gap-4 text-sm">
+            {completedCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4" style={{ color: '#059669' }} />
+                <span style={{ color: '#059669' }}>{completedCount} completed</span>
               </div>
             )}
-            <button onClick={() => setFile(null)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg" style={{ background: '#FEF2F2', color: RED }}>
-              <X className="w-3 h-3" /> Remove
-            </button>
+            {failedCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4" style={{ color: '#DC2626' }} />
+                <span style={{ color: '#DC2626' }}>{failedCount} failed</span>
+              </div>
+            )}
           </div>
-        ) : (
-          <div>
-            <div className="inline-flex p-5 rounded-full mb-4" style={{ background: 'rgba(228,0,43,0.08)' }}>
-              <UploadIcon className="w-10 h-10" style={{ color: RED }} />
-            </div>
-            <p className="font-semibold text-base mb-2" style={{ color: '#1A1A2E' }}>Drag & drop your file here</p>
-            <p className="text-sm mb-4" style={{ color: '#9CA3AF' }}>or browse from your computer</p>
-            <label className="inline-block px-6 py-2.5 rounded-lg font-semibold text-white text-sm cursor-pointer" style={{ background: RED }}>
-              Browse Files
-              <input type="file" onChange={(e) => { if (e.target.files[0]) pickFile(e.target.files[0]); }} className="hidden"
-                accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mp3,.wav" />
-            </label>
-            <p className="text-xs mt-4" style={{ color: '#C4C9D4' }}>PDF, DOCX, XLSX, images, MP4, MP3 · Max 500MB</p>
-          </div>
-        )}
-      </div>
-      <button onClick={handleUpload} disabled={!file || uploading}
-        className="w-full py-3 text-base rounded-lg font-semibold text-white flex items-center justify-center gap-2 transition-all"
-        style={{
-          background: (!file || uploading) ? '#E5E7EB' : RED,
-          cursor: (!file || uploading) ? 'not-allowed' : 'pointer'
-        }}>
-        {uploading ? <><Loader className="w-5 h-5 animate-spin" />Uploading {progress}%</> : <><UploadIcon className="w-5 h-5" />Upload &amp; Ingest</>}
-      </button>
-      <ResultPanel result={result} error={error} onDismissError={() => setError(null)} />
+        </div>
+      )}
 
-      {/* KB Ingestion Status */}
-      {result?.s3_key && <SyncStatusCard s3Key={result.s3_key} filename={result.filename || file?.name || 'Uploaded file'} />}
+      {globalError && (
+        <div className="rounded-lg p-3" style={{ background: '#FEF2F2', border: '1px solid #FECACA' }}>
+          <p className="text-sm" style={{ color: '#DC2626' }}>{globalError}</p>
+        </div>
+      )}
     </div>
   );
 };

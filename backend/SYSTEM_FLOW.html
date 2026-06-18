@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dialog Knowledge Base - Complete System Flow</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a2e;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8eaf0 100%);
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 60px;
+            border-radius: 20px;
+            box-shadow: 0 10px 60px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            padding-bottom: 40px;
+            border-bottom: 3px solid #ff4e2e;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            color: #ff4e2e;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header .subtitle {
+            font-size: 1.2em;
+            color: #6b7280;
+            font-weight: 300;
+        }
+
+        h2 {
+            font-size: 2em;
+            color: #ff4e2e;
+            margin: 50px 0 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e8eaf0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h3 {
+            font-size: 1.5em;
+            color: #374151;
+            margin: 30px 0 15px 0;
+        }
+
+        h4 {
+            font-size: 1.2em;
+            color: #4b5563;
+            margin: 20px 0 10px 0;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: #4b5563;
+        }
+
+        .flow-box {
+            background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+            border: 2px solid #ff4e2e;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+            box-shadow: 0 5px 20px rgba(255, 78, 46, 0.1);
+        }
+
+        .flow-step {
+            background: white;
+            border-left: 4px solid #ff4e2e;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .flow-step h4 {
+            color: #ff4e2e;
+            margin-bottom: 10px;
+        }
+
+        .flow-arrow {
+            text-align: center;
+            font-size: 2em;
+            color: #ff4e2e;
+            margin: 15px 0;
+        }
+
+        .info-box {
+            background: #ecfdf5;
+            border-left: 4px solid #059669;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        .warning-box {
+            background: #fef2f2;
+            border-left: 4px solid #dc2626;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        .code-box {
+            background: #1a1a2e;
+            color: #e5e7eb;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            margin: 20px 0;
+        }
+
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 20px;
+        }
+
+        li {
+            margin-bottom: 10px;
+            color: #4b5563;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        th {
+            background: #ff4e2e;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #e8eaf0;
+        }
+
+        tr:hover {
+            background: #fff5f5;
+        }
+
+        .metric-card {
+            display: inline-block;
+            background: linear-gradient(135deg, #ff4e2e 0%, #d43f2b 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 12px;
+            margin: 10px;
+            box-shadow: 0 5px 20px rgba(255, 78, 46, 0.3);
+            min-width: 200px;
+        }
+
+        .metric-card h4 {
+            color: white;
+            margin: 0 0 10px 0;
+            font-size: 1em;
+        }
+
+        .metric-card .value {
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .component-card {
+            background: white;
+            border: 1px solid #e8eaf0;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .component-card h3 {
+            margin-top: 0;
+            color: #ff4e2e;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin: 5px;
+        }
+
+        .badge-success {
+            background: #ecfdf5;
+            color: #059669;
+            border: 1px solid #059669;
+        }
+
+        .badge-warning {
+            background: #fffbeb;
+            color: #d97706;
+            border: 1px solid #d97706;
+        }
+
+        .badge-info {
+            background: #eff6ff;
+            color: #3b82f6;
+            border: 1px solid #3b82f6;
+        }
+
+        .badge-danger {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #dc2626;
+        }
+
+        .summary-box {
+            background: linear-gradient(135deg, #fff5f5 0%, #ffeded 100%);
+            border: 2px solid #ff4e2e;
+            border-radius: 20px;
+            padding: 40px;
+            margin: 40px 0;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(255, 78, 46, 0.2);
+        }
+
+        .summary-box h2 {
+            border: none;
+            margin-top: 0;
+            justify-content: center;
+        }
+
+        .summary-box ol {
+            text-align: left;
+            max-width: 800px;
+            margin: 20px auto;
+            font-size: 1.1em;
+        }
+
+        .summary-box li {
+            margin: 15px 0;
+            color: #1a1a2e;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                padding: 20px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            .header h1 {
+                font-size: 2em;
+            }
+            h2 {
+                font-size: 1.5em;
+            }
+            .metric-card {
+                display: block;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Dialog Knowledge Base</h1>
+            <p class="subtitle">Complete System Flow Documentation</p>
+        </div>
+
+        <section>
+            <h2>📊 Overview</h2>
+            <p>This document explains how documents flow through the system from upload to being queryable in the chat interface.</p>
+        </section>
+
+        <section>
+            <h2>📤 Upload Flow: From File to Queryable Document</h2>
+
+            <div class="flow-box">
+                <div class="flow-step">
+                    <h4>STEP 1: Frontend Validation</h4>
+                    <p><strong>File:</strong> <code>frontend/src/pages/UploadNew.jsx</code></p>
+                    <ul>
+                        <li>Check file size (max 500MB)</li>
+                        <li>Check file type (PDF, DOCX, HTML, XLSX, images, videos, audio)</li>
+                        <li>Show "Ready to upload" status</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 2: Upload to Backend API</h4>
+                    <p><strong>Endpoint:</strong> <code>POST /api/upload/direct</code></p>
+                    <p><strong>File:</strong> <code>backend/api/app.py</code></p>
+                    <ul>
+                        <li>Receive file via multipart/form-data</li>
+                        <li>User sees "Uploading to S3" (progress bar)</li>
+                        <li>File content loaded into memory</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 3: Metadata Extraction</h4>
+                    <p><strong>File:</strong> <code>backend/services/metadata_extractor.py</code></p>
+                    <ul>
+                        <li>PDF → Extract text, page count, author, title</li>
+                        <li>DOCX → Extract text, word count, author</li>
+                        <li>Image → Extract dimensions, format, EXIF data</li>
+                        <li>Video → Extract duration, resolution, codec</li>
+                        <li>User sees "Extracting metadata"</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 4: AI Auto-Tagging</h4>
+                    <p><strong>File:</strong> <code>backend/services/auto_tagger_service.py</code></p>
+                    <ul>
+                        <li>Send document text to Claude (Bedrock)</li>
+                        <li>Claude analyzes and generates tags:
+                            <ul>
+                                <li>doc_type (policy, guide, manual, etc.)</li>
+                                <li>topic (billing, technical support, etc.)</li>
+                                <li>department (HR, IT, Sales, etc.)</li>
+                            </ul>
+                        </li>
+                        <li>Tags used for filtering in KB queries</li>
+                        <li>User sees "Generating AI tags"</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 5: Upload to S3</h4>
+                    <p><strong>File:</strong> <code>backend/services/upload_service.py</code></p>
+                    <ul>
+                        <li>Store file: <code>s3://dialog-telecom/docs/filename.pdf</code></li>
+                        <li>Store metadata: <code>s3://dialog-telecom/docs/filename.pdf.metadata.json</code></li>
+                        <li>Get ETag (content hash) from S3</li>
+                        <li>User sees "Uploading to S3" → "Complete"</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 6: ETag Verification (Duplicate Check)</h4>
+                    <p><strong>File:</strong> <code>backend/services/ingestion_tracker.py</code></p>
+                    <ul>
+                        <li>Check: Is this exact file already ingested?</li>
+                        <li>Compare NEW ETag vs OLD ETag in tracker</li>
+                    </ul>
+                    <div class="info-box">
+                        <strong>✅ IF SAME ETAG (Duplicate):</strong><br>
+                        → Skip KB sync (instant)<br>
+                        → Log: "kb_sync_skipped_duplicate"<br>
+                        → User sees "Ready for queries" immediately
+                    </div>
+                    <div class="warning-box">
+                        <strong>🔄 IF DIFFERENT ETAG (New or Changed):</strong><br>
+                        → Continue to Step 7 (trigger KB sync)
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 7: Trigger KB Sync Job</h4>
+                    <p><strong>File:</strong> <code>backend/services/upload_service.py</code></p>
+                    <ul>
+                        <li>Call AWS Bedrock KB API: <code>start_ingestion_job()</code></li>
+                        <li>KB ID: RTG6PKX6VX</li>
+                        <li>Data Source ID: 2JIWZKQVKG</li>
+                        <li>Returns ingestion_job_id (e.g., "ECUFMRZDAU")</li>
+                        <li>User sees "Triggering KB sync"</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 8: Bedrock KB Ingestion (AWS Background Process)</h4>
+                    <p><strong>Service:</strong> AWS Bedrock Knowledge Base</p>
+                    <ul>
+                        <li>Bedrock Data Automation scans S3 bucket</li>
+                        <li>Finds new/changed files (checks ETag)</li>
+                        <li>Processes document:
+                            <ul>
+                                <li>Extract text from PDF/DOCX/HTML/images/videos</li>
+                                <li>Chunk text into smaller pieces (~300 tokens each)</li>
+                                <li>Generate embeddings (vector representations)</li>
+                                <li>Store in OpenSearch Serverless (vector database)</li>
+                            </ul>
+                        </li>
+                        <li>Job Status: STARTING → IN_PROGRESS → COMPLETE</li>
+                        <li>Duration: 10-30 seconds (depending on file size)</li>
+                        <li>User sees "Syncing to Knowledge Base" (animated)</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 9: Poll Sync Status</h4>
+                    <p><strong>Files:</strong> <code>backend/services/upload_service.py</code>, <code>frontend/src/pages/UploadNew.jsx</code></p>
+                    <ul>
+                        <li>Backend polls every 10 seconds (background)</li>
+                        <li>Frontend polls <code>/api/kb/sync/latest</code> every 2 seconds</li>
+                        <li>Check job status via <code>get_ingestion_job()</code></li>
+                        <li>When status = "COMPLETE":
+                            <ul>
+                                <li>→ User sees "Ready for queries" ✅</li>
+                                <li>→ Document is now searchable in chat</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <h4>✅ Document is Now Queryable in Chat!</h4>
+                <p>The document has been successfully indexed and can be queried through the chat interface.</p>
+            </div>
+        </section>
+
+        <section>
+            <h2>🔍 Query Flow: How Questions Get Answered</h2>
+
+            <div class="flow-box">
+                <div class="flow-step">
+                    <h4>USER TYPES QUESTION IN CHAT</h4>
+                    <p><strong>Page:</strong> <code>frontend/src/pages/Retrieve.jsx</code></p>
+                    <p><strong>Example:</strong> "What are the Dialog data packages?"</p>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 1: Greeting Detection</h4>
+                    <p><strong>File:</strong> <code>backend/utils/greeting_detector.py</code></p>
+                    <ul>
+                        <li>Check: Is this a greeting? (hi, hello, thanks, bye)</li>
+                    </ul>
+                    <div class="info-box">
+                        <strong>IF GREETING:</strong><br>
+                        → Skip KB search<br>
+                        → Generate conversational response directly<br>
+                        → Return answer (fast, 1-2 seconds)
+                    </div>
+                    <div class="warning-box">
+                        <strong>IF NOT GREETING:</strong><br>
+                        → Continue to Step 2
+                    </div>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 2: Language Detection</h4>
+                    <p><strong>File:</strong> <code>backend/services/translation_service.py</code></p>
+                    <ul>
+                        <li>Detect language: English, Sinhala, or Tamil</li>
+                        <li>User sees: "Detecting language..."</li>
+                        <li>User sees: "Language: English" (or Sinhala/Tamil)</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 3: Translation (if needed)</h4>
+                    <p><strong>File:</strong> <code>backend/services/translation_service.py</code></p>
+                    <ul>
+                        <li>IF Sinhala or Tamil:
+                            <ul>
+                                <li>Translate to English using AWS Translate</li>
+                                <li>Example: "ඩේටා පැකේජ මොනවාද?" → "What are the data packages?"</li>
+                                <li>User sees: "Translating Sinhala → English..."</li>
+                            </ul>
+                        </li>
+                        <li>IF English: Skip translation</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 4: Search Knowledge Base</h4>
+                    <p><strong>File:</strong> <code>backend/services/kb_query_service.py</code></p>
+                    <ul>
+                        <li>Send query to Bedrock KB: <code>retrieve_and_generate()</code></li>
+                        <li>Bedrock KB does:
+                            <ol>
+                                <li>Convert query to embedding (vector)</li>
+                                <li>Search OpenSearch for similar chunks (vector similarity)</li>
+                                <li>Retrieve top 10 most relevant chunks</li>
+                                <li>Return chunks with metadata (file name, score, text)</li>
+                            </ol>
+                        </li>
+                        <li>User sees: "Searching knowledge base..."</li>
+                        <li>Duration: 2-3 seconds</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 5: Generate Answer (RAG)</h4>
+                    <p><strong>File:</strong> <code>backend/services/kb_query_service.py</code></p>
+                    <ul>
+                        <li>Send to Claude (Bedrock):
+                            <ul>
+                                <li>User's question</li>
+                                <li>Retrieved chunks (context)</li>
+                            </ul>
+                        </li>
+                        <li>Claude generates answer based ONLY on provided chunks</li>
+                        <li>User sees: "Generating answer from sources..."</li>
+                        <li>Duration: 2-5 seconds</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 6: Stream Answer to User</h4>
+                    <p><strong>File:</strong> <code>backend/api/app.py</code></p>
+                    <ul>
+                        <li>Stream answer word-by-word (chunks of 3-5 words)</li>
+                        <li>User sees answer appear in real-time</li>
+                        <li>Also send citations (source documents)</li>
+                        <li>User sees: "Knowledge Base" tag with document names</li>
+                    </ul>
+                </div>
+
+                <div class="flow-arrow">↓</div>
+
+                <div class="flow-step">
+                    <h4>STEP 7: Save to Chat History</h4>
+                    <p><strong>File:</strong> <code>backend/services/chat_session_service.py</code></p>
+                    <p><strong>Database:</strong> PostgreSQL RDS</p>
+                    <ul>
+                        <li>Save user question + AI answer to database</li>
+                        <li>Include:
+                            <ul>
+                                <li>User query</li>
+                                <li>AI answer</li>
+                                <li>Citations (source documents)</li>
+                                <li>Timestamp (IST timezone)</li>
+                                <li>Language info</li>
+                            </ul>
+                        </li>
+                        <li>User can access this conversation later from sidebar</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>🎯 Key Features</h2>
+
+            <div class="component-card">
+                <h3>1. ETag Deduplication</h3>
+                <span class="badge badge-success">Performance</span>
+                <p><strong>What:</strong> Skip KB sync for duplicate files</p>
+                <p><strong>How:</strong> Compare file hash (ETag) before syncing</p>
+                <p><strong>Benefit:</strong> Save time (0s vs 10s) and AWS costs</p>
+            </div>
+
+            <div class="component-card">
+                <h3>2. Streaming Responses</h3>
+                <span class="badge badge-info">User Experience</span>
+                <p><strong>What:</strong> Show answer as it's generated</p>
+                <p><strong>How:</strong> Server-Sent Events (SSE)</p>
+                <p><strong>Benefit:</strong> User sees progress, feels faster</p>
+            </div>
+
+            <div class="component-card">
+                <h3>3. Multilingual Support</h3>
+                <span class="badge badge-warning">Languages</span>
+                <p><strong>Languages:</strong> English, Sinhala (සිංහල), Tamil (தமிழ்)</p>
+                <p><strong>How:</strong> Auto-detect → translate → search → answer</p>
+                <p><strong>Benefit:</strong> Users query in their native language</p>
+            </div>
+
+            <div class="component-card">
+                <h3>4. Greeting Detection</h3>
+                <span class="badge badge-info">Smart Routing</span>
+                <p><strong>What:</strong> Respond to "hi", "thanks" without KB search</p>
+                <p><strong>How:</strong> Pattern matching before KB query</p>
+                <p><strong>Benefit:</strong> Fast responses (1-2s vs 5-10s)</p>
+            </div>
+
+            <div class="component-card">
+                <h3>5. Auto-Tagging</h3>
+                <span class="badge badge-success">AI-Powered</span>
+                <p><strong>What:</strong> Automatically categorize documents</p>
+                <p><strong>How:</strong> Claude analyzes content, generates tags</p>
+                <p><strong>Benefit:</strong> Better search filtering</p>
+            </div>
+
+            <div class="component-card">
+                <h3>6. Real-Time Status</h3>
+                <span class="badge badge-info">Live Updates</span>
+                <p><strong>What:</strong> Show upload → sync → ready progress</p>
+                <p><strong>How:</strong> Poll KB sync status every 2 seconds</p>
+                <p><strong>Benefit:</strong> User knows when document is queryable</p>
+            </div>
+        </section>
+
+        <section>
+            <h2>📊 Performance Metrics</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Operation</th>
+                        <th>Duration</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Upload to S3</td>
+                        <td><strong>1-3s</strong></td>
+                        <td>Depends on file size</td>
+                    </tr>
+                    <tr>
+                        <td>Metadata extraction</td>
+                        <td><strong>0.5-1s</strong></td>
+                        <td>Fast for most files</td>
+                    </tr>
+                    <tr>
+                        <td>Auto-tagging</td>
+                        <td><strong>2-5s</strong></td>
+                        <td>Claude API call</td>
+                    </tr>
+                    <tr>
+                        <td>KB sync (new file)</td>
+                        <td><strong>10-30s</strong></td>
+                        <td>Bedrock ingestion</td>
+                    </tr>
+                    <tr>
+                        <td>KB sync (duplicate)</td>
+                        <td><strong>0s</strong></td>
+                        <td>Skipped via ETag</td>
+                    </tr>
+                    <tr>
+                        <td>Query KB</td>
+                        <td><strong>2-3s</strong></td>
+                        <td>Vector search</td>
+                    </tr>
+                    <tr>
+                        <td>Generate answer</td>
+                        <td><strong>2-5s</strong></td>
+                        <td>Claude streaming</td>
+                    </tr>
+                    <tr style="background: #ecfdf5;">
+                        <td><strong>Total (upload → queryable)</strong></td>
+                        <td><strong>15-40s</strong></td>
+                        <td>For new files</td>
+                    </tr>
+                    <tr style="background: #ecfdf5;">
+                        <td><strong>Total (duplicate)</strong></td>
+                        <td><strong>2-5s</strong></td>
+                        <td>ETag skip</td>
+                    </tr>
+                    <tr style="background: #eff6ff;">
+                        <td><strong>Total (query)</strong></td>
+                        <td><strong>4-8s</strong></td>
+                        <td>Search + generate</td>
+                    </tr>
+                    <tr style="background: #eff6ff;">
+                        <td><strong>Total (greeting)</strong></td>
+                        <td><strong>1-2s</strong></td>
+                        <td>No KB search</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>🗄️ Data Storage</h2>
+
+            <h3>S3 Bucket Structure</h3>
+            <div class="code-box">
+s3://dialog-telecom/
+├── docs/
+│   ├── file1.pdf                      ← Actual document
+│   ├── file1.pdf.metadata.json        ← Bedrock KB metadata
+│   ├── file2.docx
+│   ├── file2.docx.metadata.json
+│   └── ...
+└── .ingestion_tracker/
+    └── state.json                      ← ETag tracker
+            </div>
+
+            <h3>PostgreSQL Database</h3>
+            <div class="code-box">
+chat_sessions
+├── id (UUID)
+├── user_id
+├── title
+├── created_at
+└── updated_at
+
+chat_messages
+├── id (UUID)
+├── session_id (FK)
+├── role (user/assistant)
+├── content (text)
+├── citations (JSON)
+├── language (JSON)
+├── duration_ms
+└── created_at
+            </div>
+
+            <h3>OpenSearch Serverless (Managed by Bedrock)</h3>
+            <div class="code-box">
+bedrock-knowledge-base-default-index
+├── document_id
+├── chunk_text                          ← Document chunk
+├── embedding_vector                    ← 1536 dimensions
+├── metadata
+│   ├── source_file
+│   ├── doc_type
+│   ├── topic
+│   └── department
+└── score                               ← Similarity score
+            </div>
+        </section>
+
+        <section>
+            <h2>📝 Supported File Formats</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Formats</th>
+                        <th>Extensions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Documents</strong></td>
+                        <td>PDF, Word, HTML, Text</td>
+                        <td><code>.pdf</code>, <code>.doc</code>, <code>.docx</code>, <code>.html</code>, <code>.htm</code>, <code>.txt</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Spreadsheets</strong></td>
+                        <td>Excel, CSV</td>
+                        <td><code>.xlsx</code>, <code>.xls</code>, <code>.csv</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Images</strong></td>
+                        <td>JPG, PNG, GIF, WebP</td>
+                        <td><code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>, <code>.gif</code>, <code>.webp</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Video</strong></td>
+                        <td>MP4, AVI, MOV, MKV</td>
+                        <td><code>.mp4</code>, <code>.avi</code>, <code>.mov</code>, <code>.mkv</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Audio</strong></td>
+                        <td>MP3, WAV</td>
+                        <td><code>.mp3</code>, <code>.wav</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <div class="summary-box">
+                <h2>🎓 Summary in Simple Terms</h2>
+                <ol>
+                    <li><strong>User uploads PDF</strong> → File goes to S3 cloud storage</li>
+                    <li><strong>AI reads the PDF</strong> → Extracts info, tags it automatically</li>
+                    <li><strong>Bedrock indexes it</strong> → Breaks into chunks, creates search index</li>
+                    <li><strong>User asks question</strong> → System searches indexed chunks</li>
+                    <li><strong>Claude reads chunks</strong> → Generates answer based on content</li>
+                    <li><strong>User sees answer</strong> → With sources cited</li>
+                    <li><strong>Conversation saved</strong> → Can continue later</li>
+                </ol>
+                <p style="margin-top: 30px; font-size: 1.2em; color: #ff4e2e;"><strong>Key Benefit:</strong> Users can upload any document and immediately ask questions about it in English, Sinhala, or Tamil, and get accurate answers based on the actual document content.</p>
+            </div>
+        </section>
+
+        <section style="text-align: center; margin-top: 60px; padding-top: 40px; border-top: 2px solid #e8eaf0;">
+            <p style="color: #9ca3af; font-size: 0.9em;">Dialog Knowledge Base System Flow Documentation</p>
+            <p style="color: #9ca3af; font-size: 0.9em;">Generated: June 2026</p>
+        </section>
+    </div>
+</body>
+</html>

@@ -70,13 +70,20 @@ export const ChatSessionProvider = ({ children }) => {
         const data = await res.json();
         setActiveSessionId(sessionId);
         return (data.messages || []).map(m => {
-          if (m.role === 'user') return { role: 'user', text: m.content };
+          if (m.role === 'user') {
+            return {
+              role: 'user',
+              text: m.content,
+              timestamp: m.created_at
+            };
+          }
           return {
             role: 'assistant',
             answer: m.content,
             citations: m.citations || [],
             language: m.language || {},
             duration: m.duration_ms || 0,
+            timestamp: m.created_at
           };
         });
       }

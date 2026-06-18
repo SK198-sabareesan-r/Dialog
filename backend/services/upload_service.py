@@ -147,15 +147,32 @@ class UploadService:
     # Called by FastAPI BackgroundTasks AFTER the HTTP 202 is sent.
     # ------------------------------------------------------------------
 
-    def background_sync(self, s3_key: str, filename: str) -> None:
+    def background_sync(self, s3_key: str, filename: str, etag: str) -> None:
         """
         Trigger a Bedrock KB ingestion job for the uploaded file and
         poll until it reaches a terminal state (COMPLETE / FAILED).
 
         This runs in a background thread — the HTTP response has already
         been sent to the client before this executes.
+
+        Args:
+            s3_key: S3 key of the uploaded file
+            filename: Original filename
+            etag: ETag of the uploaded file (for duplicate detection)
         """
         try:
+            # Check if this exact version already ingested (ETag comparison)
+            if ingestion_tracker.is_already_ingested(s3_key, etag):
+                logger.info(json.dumps({
+                    "event": "kb_sync_skipped_duplicate",
+                    "filename": filename,
+                    "s3_key": s3_key,
+                    "etag": etag,
+                    "reason": "File with same ETag already ingested - no changes detected",
+                }))
+                return  # Skip KB sync - file unchanged
+
+            # File is new or changed - proceed with KB sync
             t1 = time.time()
             sync_result = self.trigger_kb_sync()
             trigger_ms  = round((time.time() - t1) * 1000, 2)

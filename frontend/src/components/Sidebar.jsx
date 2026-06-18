@@ -111,6 +111,7 @@ const Sidebar = () => {
     if (isOnChat && chatSessions) {
       chatSessions.loadSessions();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnChat]);
 
   const handleLogout = () => {
