@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const RED = '#E4002B';
@@ -226,6 +227,7 @@ const KBStatusCard = ({ s3Key }) => {
 // ── Local Upload Tab ──────────────────────────────────────────────────────────
 const WebUploadTab = () => {
   const { user } = useAuth();
+  const toast = useToast();
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
@@ -251,8 +253,12 @@ const WebUploadTab = () => {
         onUploadProgress: (e) => setProgress(Math.round((e.loaded * 100) / e.total)),
       });
       setResult(res.data); setFile(null); setProgress(0);
-    } catch (e) { setError(e.response?.data?.detail || e.message || 'Upload failed'); }
-    finally { setUploading(false); }
+      toast('File uploaded — KB ingestion running in background', 'success');
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.message || 'Upload failed';
+      setError(msg);
+      toast(msg, 'error');
+    } finally { setUploading(false); }
   };
 
   const FileIcon = file ? getFileIcon(file.name) : UploadIcon;
@@ -326,6 +332,7 @@ const DriveTab = () => {
   const [selectedDriveId, setSelectedDriveId] = useState('');
   const [crumbs, setCrumbs] = useState([{ id: 'root', name: 'My Drive' }]);
   const [folders, setFolders] = useState([]);
+  const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [syncName, setSyncName] = useState('');
@@ -339,6 +346,8 @@ const DriveTab = () => {
   const [sharedFolders, setSharedFolders] = useState([]);
   const [loadingShared, setLoadingShared] = useState(false);
   const userId = user?.id || user?.email;
+
+  const toast = useToast();
 
   useEffect(() => { setLiveToken(driveToken); }, [driveToken]);
 
@@ -371,6 +380,7 @@ const DriveTab = () => {
         params: { google_access_token: t, folder_id: folderId, ...(driveId ? { drive_id: driveId } : {}) },
       }));
       setFolders(res.data.folders || []);
+      setFiles(res.data.files || []);
     } catch (e) { setError(e.response?.data?.detail || 'Failed to load folder'); }
     finally { setLoading(false); }
   }, [withRetry]);
@@ -422,8 +432,13 @@ const DriveTab = () => {
         schedule, space_or_path: selectedFolder.id,
       });
       setSyncSuccess(`"${selectedFolder.name}" scheduled!`);
+      toast(`"${selectedFolder.name}" sync scheduled`, 'success');
       setSelectedFolder(null); setSyncName(''); fetchConfigs();
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to save'); }
+    } catch (e) {
+      const msg = e.response?.data?.detail || 'Failed to save';
+      setError(msg);
+      toast(msg, 'error');
+    }
     finally { setSaving(false); }
   };
 
@@ -468,8 +483,7 @@ const DriveTab = () => {
             <div className="flex items-center gap-2 flex-shrink-0">
               <button onClick={handleSelectCurrentFolder} className="text-xs px-2 py-1 rounded-lg font-semibold" style={{ background: `${RED}12`, color: RED }}>
                 Sync this folder
-              </button>
-              <button onClick={() => browse(crumbs[crumbs.length-1].id, selectedDriveId || undefined)} className="p-1.5 rounded-lg" style={{ color: '#9CA3AF' }}>
+              </button>              <button onClick={() => browse(crumbs[crumbs.length-1].id, selectedDriveId || undefined)} className="p-1.5 rounded-lg" style={{ color: '#9CA3AF' }}>
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
@@ -477,20 +491,29 @@ const DriveTab = () => {
           <div className="max-h-56 overflow-y-auto">
             {loading ? (
               <div className="flex justify-center py-8"><Loader className="w-5 h-5 animate-spin" style={{ color: RED }} /></div>
-            ) : folders.length === 0 ? (
-              <div className="py-8 text-center"><FolderOpen className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-xs" style={{ color: '#9CA3AF' }}>No folders</p></div>
+            ) : folders.length === 0 && files.length === 0 ? (
+              <div className="py-8 text-center"><FolderOpen className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-xs" style={{ color: '#9CA3AF' }}>No files or folders</p></div>
             ) : (
-              folders.map(f => (
-                <div key={f.id} className="flex items-center gap-3 px-4 py-2.5 border-b hover:bg-gray-50 transition-colors cursor-pointer" style={{ borderColor: '#F3F4F6', background: selectedFolder?.id === f.id ? '#EFF6FF' : '' }} onClick={() => handleSelectFolder(f)}>
-                  <Folder className="w-4 h-4 flex-shrink-0" style={{ color: '#F7941D' }} />
-                  <span className="flex-1 text-sm font-medium truncate" style={{ color: selectedFolder?.id === f.id ? '#4285F4' : '#1A1A2E' }}>
-                    {f.name}{selectedFolder?.id === f.id && <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ background: '#EFF6FF', color: '#4285F4' }}>Selected</span>}
-                  </span>
-                  <button onClick={e => { e.stopPropagation(); openFolder(f); }} className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 flex-shrink-0" style={{ color: RED, background: `${RED}10` }}>
-                    Open <ChevronRight className="w-3 h-3" />
-                  </button>
-                </div>
-              ))
+              <>
+                {folders.map(f => (
+                  <div key={f.id} className="flex items-center gap-3 px-4 py-2.5 border-b hover:bg-gray-50 transition-colors cursor-pointer" style={{ borderColor: '#F3F4F6', background: selectedFolder?.id === f.id ? '#EFF6FF' : '' }} onClick={() => handleSelectFolder(f)}>
+                    <Folder className="w-4 h-4 flex-shrink-0" style={{ color: '#F7941D' }} />
+                    <span className="flex-1 text-sm font-medium truncate" style={{ color: selectedFolder?.id === f.id ? '#4285F4' : '#1A1A2E' }}>
+                      {f.name}{selectedFolder?.id === f.id && <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ background: '#EFF6FF', color: '#4285F4' }}>Selected</span>}
+                    </span>
+                    <button onClick={e => { e.stopPropagation(); openFolder(f); }} className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 flex-shrink-0" style={{ color: RED, background: `${RED}10` }}>
+                      Open <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {files.map(f => (
+                  <div key={f.id} className="flex items-center gap-3 px-4 py-2 border-b" style={{ borderColor: '#F3F4F6' }}>
+                    <FileText className="w-4 h-4 flex-shrink-0" style={{ color: '#9CA3AF' }} />
+                    <span className="flex-1 text-xs truncate" style={{ color: '#374151' }}>{f.name}</span>
+                    <span className="text-xs flex-shrink-0" style={{ color: '#C4C9D4' }}>{fmt(f.size)}</span>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>
@@ -571,6 +594,7 @@ const S3SyncTab = ({ userId }) => {
   const [syncConfigs, setSyncConfigs] = useState([]);
   const [loadingConfigs, setLoadingConfigs] = useState(true);
 
+  const toast = useToast();
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   const fetchConfigs = useCallback(async () => {
@@ -596,10 +620,14 @@ const S3SyncTab = ({ userId }) => {
         schedule, space_or_path: form.bucket + (form.prefix ? `/${form.prefix}` : ''),
       });
       setSuccess(`S3 sync "${form.syncName}" scheduled!`);
+      toast(`S3 sync "${form.syncName}" scheduled`, 'success');
       setForm({ syncName: '', bucket: '', prefix: '', region: 'ap-south-1', accessKeyId: '', secretAccessKey: '', sessionToken: '' });
       fetchConfigs();
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to save'); }
-    finally { setSaving(false); }
+    } catch (e) {
+      const msg = e.response?.data?.detail || 'Failed to save';
+      setError(msg);
+      toast(msg, 'error');
+    } finally { setSaving(false); }
   };
 
   return (
@@ -655,6 +683,7 @@ const ConfluenceSyncTab = ({ userId }) => {
   const [syncConfigs, setSyncConfigs] = useState([]);
   const [loadingConfigs, setLoadingConfigs] = useState(true);
 
+  const toast = useToast();
   const setCred = (k) => (e) => setCreds(p => ({ ...p, [k]: e.target.value }));
 
   const fetchConfigs = useCallback(async () => {
@@ -673,7 +702,10 @@ const ConfluenceSyncTab = ({ userId }) => {
     try {
       const res = await axios.post(`${API_BASE}/api/sync/confluence/list-spaces`, { site_url: creds.site_url, email: creds.email, api_token: creds.api_token });
       setSpaces(res.data.spaces || []); setStep(2);
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to connect to Confluence'); }
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to connect to Confluence');
+      toast(e.response?.data?.detail || 'Failed to connect to Confluence', 'error');
+    }
     finally { setConnecting(false); }
   };
 
@@ -716,10 +748,14 @@ const ConfluenceSyncTab = ({ userId }) => {
         schedule, space_or_path,
       });
       setSuccess(`Confluence sync "${creds.syncName}" scheduled!`);
+      toast(`Confluence sync "${creds.syncName}" scheduled`, 'success');
       setStep(1); setCreds({ site_url: '', email: '', api_token: '', syncName: '' });
       setSelectedSpace(null); setSelectedPages([]); fetchConfigs();
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to save'); }
-    finally { setSaving(false); }
+    } catch (e) {
+      const msg = e.response?.data?.detail || 'Failed to save';
+      setError(msg);
+      toast(msg, 'error');
+    } finally { setSaving(false); }
   };
 
   return (
@@ -842,45 +878,82 @@ const ConfluenceSyncTab = ({ userId }) => {
 
 // ── Sync Config List ──────────────────────────────────────────────────────────
 const SyncConfigList = ({ configs, loading, userId, onRefresh, sourceColor }) => {
+  const toast = useToast();
   const [expandedHistory, setExpandedHistory] = useState({});
   const [history, setHistory] = useState({});
   const [loadingHistory, setLoadingHistory] = useState({});
+  const [syncedFiles, setSyncedFiles] = useState({});
+  const [loadingFiles, setLoadingFiles] = useState({});
+  const [activeTab, setActiveTab] = useState({}); // 'runs' | 'files'
 
   const color = sourceColor || RED;
 
   const toggleHistory = async (configId) => {
     const isOpen = expandedHistory[configId];
     setExpandedHistory(p => ({ ...p, [configId]: !isOpen }));
-    // Always reload when opening to get fresh data
     if (!isOpen) {
-      setLoadingHistory(p => ({ ...p, [configId]: true }));
-      try {
-        const res = await axios.get(`${API_BASE}/api/sync/configs/${configId}/history`, { params: { user_id: userId } });
-        setHistory(p => ({ ...p, [configId]: res.data.history || [] }));
-      } catch { setHistory(p => ({ ...p, [configId]: [] })); }
-      finally { setLoadingHistory(p => ({ ...p, [configId]: false })); }
+      // default to 'runs' tab and load runs
+      setActiveTab(p => ({ ...p, [configId]: 'runs' }));
+      loadRuns(configId);
     }
+  };
+
+  const loadRuns = async (configId) => {
+    setLoadingHistory(p => ({ ...p, [configId]: true }));
+    try {
+      const res = await axios.get(`${API_BASE}/api/sync/configs/${configId}/history`, { params: { user_id: userId } });
+      setHistory(p => ({ ...p, [configId]: res.data.history || [] }));
+    } catch { setHistory(p => ({ ...p, [configId]: [] })); }
+    finally { setLoadingHistory(p => ({ ...p, [configId]: false })); }
+  };
+
+  const loadFiles = async (configId) => {
+    if (syncedFiles[configId]) return; // cached
+    setLoadingFiles(p => ({ ...p, [configId]: true }));
+    try {
+      const res = await axios.get(`${API_BASE}/api/sync/configs/${configId}/files`, { params: { user_id: userId } });
+      setSyncedFiles(p => ({ ...p, [configId]: res.data.files || [] }));
+    } catch { setSyncedFiles(p => ({ ...p, [configId]: [] })); }
+    finally { setLoadingFiles(p => ({ ...p, [configId]: false })); }
+  };
+
+  const switchTab = (configId, tab) => {
+    setActiveTab(p => ({ ...p, [configId]: tab }));
+    if (tab === 'files') loadFiles(configId);
+    if (tab === 'runs') loadRuns(configId);
   };
 
   const doAction = async (action, configId, status) => {
     try {
-      if (action === 'run')    await axios.post(`${API_BASE}/api/sync/configs/${configId}/run`, null, { params: { user_id: userId } });
-      if (action === 'pause')  await axios.put(`${API_BASE}/api/sync/configs/${configId}/pause`, null, { params: { user_id: userId } });
-      if (action === 'resume') await axios.put(`${API_BASE}/api/sync/configs/${configId}/resume`, null, { params: { user_id: userId } });
-      if (action === 'delete') { if (!window.confirm('Delete this sync?')) return; await axios.delete(`${API_BASE}/api/sync/configs/${configId}`, { params: { user_id: userId } }); }
+      if (action === 'run') {
+        await axios.post(`${API_BASE}/api/sync/configs/${configId}/run`, null, { params: { user_id: userId } });
+        toast('Sync triggered — running in background', 'info');
+      }
+      if (action === 'pause') {
+        await axios.put(`${API_BASE}/api/sync/configs/${configId}/pause`, null, { params: { user_id: userId } });
+        toast('Sync paused', 'info');
+      }
+      if (action === 'resume') {
+        await axios.put(`${API_BASE}/api/sync/configs/${configId}/resume`, null, { params: { user_id: userId } });
+        toast('Sync resumed', 'success');
+      }
+      if (action === 'delete') {
+        if (!window.confirm('Delete this sync?')) return;
+        await axios.delete(`${API_BASE}/api/sync/configs/${configId}`, { params: { user_id: userId } });
+        toast('Sync config deleted', 'info');
+      }
       setTimeout(onRefresh, action === 'run' ? 3500 : 500);
       if (action === 'run') {
         // Refresh history after run completes
         setTimeout(() => {
           setHistory(p => { const n = {...p}; delete n[configId]; return n; });
-          setLoadingHistory(p => ({ ...p, [configId]: true }));
-          axios.get(`${API_BASE}/api/sync/configs/${configId}/history`, { params: { user_id: userId } })
-            .then(res => setHistory(p => ({ ...p, [configId]: res.data.history || [] })))
-            .catch(() => {})
-            .finally(() => setLoadingHistory(p => ({ ...p, [configId]: false })));
+          setSyncedFiles(p => { const n = {...p}; delete n[configId]; return n; });
+          loadRuns(configId);
         }, 5000);
       }
-    } catch {}
+    } catch (e) {
+      toast(e.response?.data?.detail || `Action failed: ${action}`, 'error');
+    }
   };
 
   if (loading) return <div className="flex justify-center py-6"><Loader className="w-5 h-5 animate-spin" style={{ color }} /></div>;
@@ -928,7 +1001,7 @@ const SyncConfigList = ({ configs, loading, userId, onRefresh, sourceColor }) =>
                 </div>
 
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => doAction('run', cfg.id)} className="p-1.5 rounded-lg transition-colors hover:bg-gray-100" title="Run now" style={{ color }}>
+                  <button onClick={() => doAction('run', cfg.id)} className="p-1.5 rounded-lg transition-colors hover:bg-gray-100" title="Sync now" style={{ color }}>
                     <Zap className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => toggleHistory(cfg.id)} className="p-1.5 rounded-lg transition-colors hover:bg-gray-100" title="History"
@@ -948,33 +1021,42 @@ const SyncConfigList = ({ configs, loading, userId, onRefresh, sourceColor }) =>
 
             {isOpen && (
               <div className="border-t" style={{ borderColor: '#F0F2F5', background: '#F8F9FB' }}>
-                <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
-                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#6B7280' }}>Run History</p>
-                  <button onClick={() => toggleHistory(cfg.id)} className="p-1 rounded" style={{ color: '#9CA3AF' }}>
+                {/* Tab bar */}
+                <div className="flex items-center gap-1 px-4 pt-3 pb-0">
+                  <div className="flex gap-1 p-0.5 rounded-lg flex-1" style={{ background: '#EBEBEB' }}>
+                    {[{ id: 'runs', label: 'Run History' }, { id: 'files', label: 'Synced Files' }].map(tab => (
+                      <button key={tab.id} onClick={() => switchTab(cfg.id, tab.id)}
+                        className="flex-1 py-1 rounded-md text-xs font-semibold transition-all"
+                        style={{ background: (activeTab[cfg.id] || 'runs') === tab.id ? '#fff' : 'transparent', color: (activeTab[cfg.id] || 'runs') === tab.id ? '#1A1A2E' : '#9CA3AF', boxShadow: (activeTab[cfg.id] || 'runs') === tab.id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => (activeTab[cfg.id] || 'runs') === 'runs' ? loadRuns(cfg.id) : loadFiles(cfg.id)}
+                    className="p-1.5 rounded-lg ml-1 flex-shrink-0" style={{ color: '#9CA3AF' }}>
                     <RefreshCw className="w-3 h-3" />
                   </button>
                 </div>
 
-                {loadingHistory[cfg.id] ? (
-                  <div className="flex items-center gap-2 justify-center py-5">
-                    <Loader className="w-4 h-4 animate-spin" style={{ color }} />
-                    <span className="text-xs" style={{ color: '#9CA3AF' }}>Loading runs…</span>
-                  </div>
-                ) : runs.length === 0 ? (
-                  <div className="flex flex-col items-center py-6 pb-4">
-                    <Activity className="w-8 h-8 mb-2 opacity-20" style={{ color: '#9CA3AF' }} />
-                    <p className="text-xs" style={{ color: '#9CA3AF' }}>No runs yet</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#C4C9D4' }}>Click ⚡ to trigger a manual run</p>
-                  </div>
-                ) : (
-                  <div className="px-4 pb-3 space-y-2">
-                    {runs.map((run, i) => {
+                {/* Runs tab */}
+                {(activeTab[cfg.id] || 'runs') === 'runs' && (
+                  <div className="px-4 py-3 space-y-2">
+                    {loadingHistory[cfg.id] ? (
+                      <div className="flex items-center gap-2 justify-center py-5">
+                        <Loader className="w-4 h-4 animate-spin" style={{ color }} />
+                        <span className="text-xs" style={{ color: '#9CA3AF' }}>Loading runs…</span>
+                      </div>
+                    ) : (runs || []).length === 0 ? (
+                      <div className="flex flex-col items-center py-5">
+                        <Activity className="w-7 h-7 mb-2 opacity-20" style={{ color: '#9CA3AF' }} />
+                        <p className="text-xs" style={{ color: '#9CA3AF' }}>No runs yet — click ⚡ to sync now</p>
+                      </div>
+                    ) : (runs || []).map((run, i) => {
                       const rs = RUN_STATUS[run.status] || RUN_STATUS.skipped;
                       const started = run.started_at ? new Date(run.started_at) : null;
                       const dateStr = started ? started.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
                       return (
                         <div key={i} className="rounded-xl border overflow-hidden" style={{ background: '#fff', borderColor: '#E5E7EB' }}>
-                          {/* Run header */}
                           <div className="flex items-center gap-2 px-3 py-2.5">
                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: rs.color }} />
                             <span className="text-xs font-semibold" style={{ color: rs.color }}>{rs.label}</span>
@@ -983,37 +1065,16 @@ const SyncConfigList = ({ configs, loading, userId, onRefresh, sourceColor }) =>
                               <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#F3F4F6', color: '#9CA3AF' }}>
                                 {run.trigger === 'manual' ? '👆 manual' : '⏰ auto'}
                               </span>
-                              {run.duration_s != null && (
-                                <span className="text-xs" style={{ color: '#9CA3AF' }}>{run.duration_s}s</span>
-                              )}
+                              {run.duration_s != null && <span className="text-xs" style={{ color: '#9CA3AF' }}>{run.duration_s}s</span>}
                             </div>
                           </div>
-
-                          {/* Stats row */}
                           {(run.files_synced > 0 || run.files_failed > 0 || run.files_skipped > 0) && (
                             <div className="flex items-center gap-4 px-3 py-2 border-t" style={{ borderColor: '#F3F4F6', background: '#FAFBFC' }}>
-                              {run.files_synced > 0 && (
-                                <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ background: '#059669' }} />
-                                  <span className="text-xs font-semibold" style={{ color: '#059669' }}>{run.files_synced} synced</span>
-                                </div>
-                              )}
-                              {run.files_skipped > 0 && (
-                                <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ background: '#D97706' }} />
-                                  <span className="text-xs" style={{ color: '#D97706' }}>{run.files_skipped} skipped</span>
-                                </div>
-                              )}
-                              {run.files_failed > 0 && (
-                                <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ background: '#DC2626' }} />
-                                  <span className="text-xs" style={{ color: '#DC2626' }}>{run.files_failed} failed</span>
-                                </div>
-                              )}
+                              {run.files_synced > 0 && <span className="text-xs font-semibold flex items-center gap-1" style={{ color: '#059669' }}><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#059669' }} />{run.files_synced} synced</span>}
+                              {run.files_skipped > 0 && <span className="text-xs flex items-center gap-1" style={{ color: '#D97706' }}><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#D97706' }} />{run.files_skipped} skipped</span>}
+                              {run.files_failed > 0 && <span className="text-xs flex items-center gap-1" style={{ color: '#DC2626' }}><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#DC2626' }} />{run.files_failed} failed</span>}
                             </div>
                           )}
-
-                          {/* Error */}
                           {run.error && (
                             <div className="px-3 py-2 border-t" style={{ borderColor: '#FEE2E2', background: '#FEF2F2' }}>
                               <p className="text-xs" style={{ color: '#DC2626' }}>{fmtError(run.error)}</p>
@@ -1022,6 +1083,44 @@ const SyncConfigList = ({ configs, loading, userId, onRefresh, sourceColor }) =>
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Files tab */}
+                {(activeTab[cfg.id] || 'runs') === 'files' && (
+                  <div className="px-4 py-3">
+                    {loadingFiles[cfg.id] ? (
+                      <div className="flex items-center gap-2 justify-center py-5">
+                        <Loader className="w-4 h-4 animate-spin" style={{ color }} />
+                        <span className="text-xs" style={{ color: '#9CA3AF' }}>Loading files…</span>
+                      </div>
+                    ) : (syncedFiles[cfg.id] || []).length === 0 ? (
+                      <div className="flex flex-col items-center py-5">
+                        <FileText className="w-7 h-7 mb-2 opacity-20" style={{ color: '#9CA3AF' }} />
+                        <p className="text-xs" style={{ color: '#9CA3AF' }}>No files synced yet</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 max-h-56 overflow-y-auto">
+                        {(syncedFiles[cfg.id] || []).map((f, i) => {
+                          const filename = f.s3_key ? f.s3_key.split('/').pop() : f.source_file_id;
+                          const statusColor = f.status === 'synced' ? '#059669' : f.status === 'failed' ? '#DC2626' : '#D97706';
+                          return (
+                            <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg" style={{ background: '#fff', border: '1px solid #F3F4F6' }}>
+                              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: statusColor }} />
+                              <FileText className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#9CA3AF' }} />
+                              <span className="text-xs flex-1 truncate font-medium" style={{ color: '#374151' }}>{filename}</span>
+                              <span className="text-xs flex-shrink-0" style={{ color: statusColor }}>{f.status}</span>
+                              {f.last_synced_at && (
+                                <span className="text-xs flex-shrink-0" style={{ color: '#C4C9D4' }}>
+                                  {new Date(f.last_synced_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <p className="text-xs text-center pt-1" style={{ color: '#C4C9D4' }}>{(syncedFiles[cfg.id] || []).length} file{(syncedFiles[cfg.id] || []).length !== 1 ? 's' : ''} total</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

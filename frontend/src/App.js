@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChatSessionProvider } from './context/ChatSessionContext';
+import { ToastProvider } from './context/ToastContext';
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
@@ -49,6 +50,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
+        <ToastProvider>
         <ChatSessionProvider>
         <Routes>
           {/* Public routes */}
@@ -81,6 +83,7 @@ function App() {
           } />
         </Routes>
         </ChatSessionProvider>
+        </ToastProvider>
       </AuthProvider>
     </Router>
   );
