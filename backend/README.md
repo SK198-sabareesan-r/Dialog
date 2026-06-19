@@ -349,7 +349,7 @@ USE_EVENTBRIDGE=false             # Set true if using AWS EventBridge
 # ============================================================================
 # Upload Limits (Optional)
 # ============================================================================
-MAX_UPLOAD_BYTES=524288000        # 500MB default
+MAX_UPLOAD_BYTES=524288001        # 500MB default
 ```
 
 ### Getting AWS Credentials

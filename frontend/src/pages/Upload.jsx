@@ -113,7 +113,7 @@ const SyncStatusCard = ({ s3Key, filename }) => {
           setJobId(res.data.ingestion_job_id);
           setStatus(res.data.status || 'STARTING');
           // Start polling every 8 seconds
-          intervalRef.current = setInterval(() => pollStatus(res.data.ingestion_job_id), 8000);
+          intervalRef.current = setInterval(() => pollStatus(res.data.ingestion_job_id), 8001);
           // Poll immediately too
           pollStatus(res.data.ingestion_job_id);
         }

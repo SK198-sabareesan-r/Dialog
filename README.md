@@ -76,7 +76,7 @@ demo/
    python main.py
    ```
 
-   Backend runs at `http://localhost:8000`
+   Backend runs at `http://localhost:8001`
 
 ### Frontend Setup
 
@@ -100,8 +100,8 @@ demo/
 ## API Documentation
 
 Once the backend is running, visit:
-- API Docs: `http://localhost:8000/docs`
-- Interactive API: `http://localhost:8000/redoc`
+- API Docs: `http://localhost:8001/docs`
+- Interactive API: `http://localhost:8001/redoc`
 
 ## Environment Configuration
 
@@ -169,7 +169,7 @@ with open('document.pdf', 'rb') as f:
         'team_id': 'team456'
     }
     response = requests.post(
-        'http://localhost:8000/api/v1/ingest/upload',
+        'http://localhost:8001/api/v1/ingest/upload',
         files=files,
         params=params
     )
@@ -189,7 +189,7 @@ payload = {
 }
 
 response = requests.post(
-    'http://localhost:8000/api/v1/retrieve',
+    'http://localhost:8001/api/v1/retrieve',
     json=payload
 )
 print(response.json())
@@ -254,7 +254,7 @@ frontend/
 
 ### Frontend Issues
 
-- Make sure backend is running on port 8000
+- Make sure backend is running on port 8001
 - Check browser console for errors
 - Clear browser cache if styles don't load
 - Verify CORS settings if API calls fail

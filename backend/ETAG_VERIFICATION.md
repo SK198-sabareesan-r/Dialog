@@ -178,7 +178,7 @@ Update ETag in tracker
 
 ### Test Case 1: First Upload
 ```bash
-curl -X POST http://localhost:8000/api/upload/direct \
+curl -X POST http://localhost:8001/api/upload/direct \
   -F "file=@test.pdf" \
   -F "user_id=test@example.com"
 ```
@@ -191,7 +191,7 @@ curl -X POST http://localhost:8000/api/upload/direct \
 ### Test Case 2: Duplicate Upload
 ```bash
 # Upload same file again
-curl -X POST http://localhost:8000/api/upload/direct \
+curl -X POST http://localhost:8001/api/upload/direct \
   -F "file=@test.pdf" \
   -F "user_id=test@example.com"
 ```
@@ -204,7 +204,7 @@ curl -X POST http://localhost:8000/api/upload/direct \
 ### Test Case 3: Modified File
 ```bash
 # Modify test.pdf locally, then upload
-curl -X POST http://localhost:8000/api/upload/direct \
+curl -X POST http://localhost:8001/api/upload/direct \
   -F "file=@test.pdf" \
   -F "user_id=test@example.com"
 ```

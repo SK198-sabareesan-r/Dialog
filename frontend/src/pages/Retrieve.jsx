@@ -9,7 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useChatSessions } from '../context/ChatSessionContext';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8001';
 const DIALOG_RED = '#ff4e2e';
 
 // ---------------------------------------------------------------------------

@@ -97,7 +97,7 @@ pip install -r requirements.txt
 python api/app.py
 ```
 
-Backend will run on: **http://localhost:8000**
+Backend will run on: **http://localhost:8001**
 
 ---
 
@@ -117,7 +117,7 @@ Already includes:
 
 ### B. Configure Environment (Optional)
 
-If you need to change the API URL from the default (`http://localhost:8000`), create a `.env` file:
+If you need to change the API URL from the default (`http://localhost:8001`), create a `.env` file:
 
 ```bash
 cd frontend
@@ -126,7 +126,7 @@ cd frontend
 Create `.env`:
 
 ```env
-REACT_APP_API_URL=http://localhost:8000
+REACT_APP_API_URL=http://localhost:8001
 ```
 
 **Note**: The frontend URL (`http://localhost:3000`) is hardcoded in the backend for OAuth redirects.

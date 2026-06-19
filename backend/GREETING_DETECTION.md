@@ -108,17 +108,17 @@ python test_greeting_detection.py
 
 ```bash
 # English greetings
-curl -X POST http://localhost:8000/api/retrieve/stream \
+curl -X POST http://localhost:8001/api/retrieve/stream \
   -H "Content-Type: application/json" \
   -d '{"query": "hello", "user_id": "test"}'
 
 # Sinhala greeting
-curl -X POST http://localhost:8000/api/retrieve/stream \
+curl -X POST http://localhost:8001/api/retrieve/stream \
   -H "Content-Type: application/json" \
   -d '{"query": "හෙලෝ", "user_id": "test"}'
 
 # Mixed (should do KB search)
-curl -X POST http://localhost:8000/api/retrieve/stream \
+curl -X POST http://localhost:8001/api/retrieve/stream \
   -H "Content-Type: application/json" \
   -d '{"query": "Hi, what is Dialog helpline?", "user_id": "test"}'
 ```

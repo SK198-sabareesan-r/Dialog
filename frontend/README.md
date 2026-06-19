@@ -28,7 +28,7 @@ npm install
 
 ## Configuration
 
-The frontend connects to the backend API at `http://localhost:8000` by default.
+The frontend connects to the backend API at `http://localhost:8001` by default.
 
 To change the API endpoint, update the `API_BASE` constant in the page components.
 

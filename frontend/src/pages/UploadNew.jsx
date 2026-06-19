@@ -10,7 +10,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8001';
 const RED = '#E4002B';
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
@@ -214,7 +214,7 @@ const WebUploadTab = () => {
                   }
                 }
               } catch {}
-            }, 8000);
+            }, 8001);
           }
         } catch {}
       }, 2000);

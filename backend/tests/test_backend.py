@@ -5,7 +5,7 @@ Simple script to test if backend is accessible and responding
 import requests
 import sys
 
-API_BASE = "http://localhost:8000"
+API_BASE = "http://localhost:8001"
 
 def test_health():
     """Test basic health endpoint"""

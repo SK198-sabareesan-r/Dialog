@@ -108,7 +108,7 @@ app = FastAPI(
 # ============================================================================
 # File size limit — 500MB to accommodate video uploads
 # Run uvicorn with --limit-max-requests or set in gunicorn config.
-# For development: uvicorn api.app:app --host 0.0.0.0 --port 8000
+# For development: uvicorn api.app:app --host 0.0.0.0 --port 8001
 # The limit below is enforced at the application layer for multipart uploads.
 # ============================================================================
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))  # 500MB default
@@ -2427,6 +2427,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         reload=True
     )
