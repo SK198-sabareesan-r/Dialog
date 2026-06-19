@@ -551,7 +551,7 @@ class SyncService:
 
     def sync_confluence(self, db: Session, config: SyncConfig) -> int:
         """
-        Sync all pages in a Confluence space.
+        Sync all pages in a Confluence space OR specific pages.
 
         Credentials dict expected:
             {
@@ -560,47 +560,75 @@ class SyncService:
                 "api_token": "ATATT...",
             }
 
-        space_or_path should be the Confluence space key (e.g. "HR").
+        space_or_path should be:
+          - Confluence space key (e.g. "HR") for entire space sync
+          - "pages:ID1,ID2,ID3" for specific page IDs
         Returns the number of pages uploaded/updated.
         """
         creds = self.decrypt_credentials(config.credentials_enc)
         site_url = creds['site_url']
         email = creds['email']
         api_token = creds['api_token']
-        space_key = config.space_or_path or ''
+        space_or_path = config.space_or_path or ''
 
-        if not space_key:
+        if not space_or_path:
             raise ValueError(
-                f"SyncConfig {config.id}: space_or_path must be set to a Confluence space key"
+                f"SyncConfig {config.id}: space_or_path must be set to a Confluence space key or pages:ID1,ID2"
             )
 
-        # Fetch pages with version info so we can fingerprint by version number
+        # Check if syncing specific pages or entire space
         pages_raw: List[Dict[str, Any]] = []
-        start = 0
-        limit = 50
-        while True:
-            data = confluence_service._get(
-                site_url, email, api_token, '/content',
-                {
-                    'spaceKey': space_key,
-                    'type': 'page',
-                    'depth': 'all',
-                    'start': start,
-                    'limit': limit,
-                    'expand': 'version',
-                }
-            )
-            results = data.get('results', [])
-            pages_raw.extend(results)
-            if data.get('size', 0) < limit:
-                break
-            start += limit
+
+        if space_or_path.startswith('pages:'):
+            # Specific pages mode
+            page_ids = space_or_path.replace('pages:', '').split(',')
+            logger.info(f"[sync_confluence] Syncing {len(page_ids)} specific pages: {page_ids}")
+
+            for page_id in page_ids:
+                page_id = page_id.strip()
+                if not page_id:
+                    continue
+                try:
+                    page_data = confluence_service._get(
+                        site_url, email, api_token, f'/content/{page_id}',
+                        {'expand': 'version,space'}
+                    )
+                    pages_raw.append(page_data)
+                except Exception as e:
+                    logger.warning(f"[sync_confluence] Failed to fetch page {page_id}: {e}")
+        else:
+            # Entire space mode
+            space_key = space_or_path
+            logger.info(f"[sync_confluence] Syncing entire space: {space_key}")
+
+            start = 0
+            limit = 50
+            while True:
+                data = confluence_service._get(
+                    site_url, email, api_token, '/content',
+                    {
+                        'spaceKey': space_key,
+                        'type': 'page',
+                        'depth': 'all',
+                        'start': start,
+                        'limit': limit,
+                        'expand': 'version',
+                    }
+                )
+                results = data.get('results', [])
+                pages_raw.extend(results)
+                if data.get('size', 0) < limit:
+                    break
+                start += limit
 
         files_synced = 0
         for page in pages_raw:
             page_id = page['id']
             page_title = page.get('title', page_id)
             version_number = str(page.get('version', {}).get('number', '0'))
+
+            # Extract space key from page data
+            page_space_key = page.get('space', {}).get('key', space_or_path if not space_or_path.startswith('pages:') else '')
 
             needs_sync = self._check_and_upsert_tracker(
                 db, config.id, config.user_id, page_id, version_number
@@ -625,7 +653,7 @@ class SyncService:
                     'confluence_page_id':  page_id,
                     'confluence_title':    page_title,
                     'confluence_version':  version_number,
-                    'space_key':           space_key,
+                    'space_key':           page_space_key,
                     'site_url':            site_url,
                     'filename':            file_name,
                     'user_id':             config.user_id,
@@ -639,7 +667,7 @@ class SyncService:
                         'sync_config_name':    config.display_name or '',
                         'confluence_page_id':  page_id,
                         'confluence_title':    page_title,
-                        'space_key':           space_key,
+                        'space_key':           page_space_key,
                         'user_id':             config.user_id,
                     }
                 }

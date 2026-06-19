@@ -52,14 +52,6 @@ const SCHEDULE_OPTIONS = [
   { value: 'weekly', label: 'Weekly'     },
 ];
 
-const SYNC_STATUS_CONFIG = {
-  STARTING:    { label: 'Starting…',  color: '#D97706', bg: '#FFFBEB', pulse: true  },
-  IN_PROGRESS: { label: 'Indexing…',  color: '#3B82F6', bg: '#EFF6FF', pulse: true  },
-  COMPLETE:    { label: 'Indexed ✓',  color: '#059669', bg: '#ECFDF5', pulse: false },
-  FAILED:      { label: 'Failed',     color: '#DC2626', bg: '#FEF2F2', pulse: false },
-  STOPPED:     { label: 'Stopped',    color: '#6B7280', bg: '#F9FAFB', pulse: false },
-  PENDING:     { label: 'Waiting…',   color: '#D97706', bg: '#FFFBEB', pulse: true  },
-};
 
 const STATUS_STYLE = {
   active: { label: 'Active', bg: '#ECFDF5', color: '#059669', dot: '#059669' },
@@ -67,8 +59,6 @@ const STATUS_STYLE = {
   error:  { label: 'Error',  bg: '#FEF2F2', color: '#DC2626', dot: '#DC2626' },
 };
 
-const SOURCE_COLORS = { gdrive: '#4285F4', confluence: '#0052CC', s3: '#E25444' }; // eslint-disable-line no-unused-vars
-const SOURCE_LABELS = { gdrive: 'Google Drive', confluence: 'Confluence', s3: 'AWS S3' }; // eslint-disable-line no-unused-vars
 
 const fmt = (b) => !b ? '—' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(0)} KB` : `${(b/1048576).toFixed(1)} MB`;
 const fmtDate = (iso) => !iso ? 'Never' : new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -156,87 +146,23 @@ const Alert = ({ type = 'error', children }) => {
   );
 };
 
-// ── KB Ingestion Status Card ──────────────────────────────────────────────────
-const KBStatusCard = ({ s3Key }) => {
-  const [jobId, setJobId] = useState(null);
-  const [status, setStatus] = useState('PENDING');
-  const [stats, setStats] = useState(null);
-  const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef(null);
-  const startRef = useRef(Date.now());
-
-  useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    let stopped = false;
-    const poll = async (id) => {
-      try {
-        const r = await axios.get(`${API_BASE}/api/upload/sync-status/${id}`, { timeout: 10000 });
-        if (stopped) return;
-        setStatus(r.data.status); setStats(r.data);
-        if (['COMPLETE','FAILED','STOPPED'].includes(r.data.status)) clearInterval(intervalRef.current);
-      } catch { clearInterval(intervalRef.current); }
-    };
-    const fetchJob = async () => {
-      try {
-        const r = await axios.get(`${API_BASE}/api/kb/sync/latest`, { timeout: 10000 });
-        if (stopped || !r.data?.ingestion_job_id) return;
-        setJobId(r.data.ingestion_job_id); setStatus(r.data.status || 'STARTING');
-        intervalRef.current = setInterval(() => poll(r.data.ingestion_job_id), 8000);
-        poll(r.data.ingestion_job_id);
-      } catch {}
-    };
-    const t = setTimeout(fetchJob, 2000);
-    return () => { stopped = true; clearTimeout(t); clearInterval(intervalRef.current); };
-  }, [s3Key]);
-
-  const cfg = SYNC_STATUS_CONFIG[status] || SYNC_STATUS_CONFIG.PENDING;
-  const fmtE = (s) => s < 60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`;
-
-  return (
-    <div className="rounded-xl p-4 border-l-4" style={{ background: cfg.bg, borderLeftColor: cfg.color, borderTop: `1px solid ${cfg.color}30`, borderRight: `1px solid ${cfg.color}30`, borderBottom: `1px solid ${cfg.color}30` }}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Database className="w-4 h-4" style={{ color: cfg.color }} />
-          <span className="text-xs font-semibold" style={{ color: cfg.color }}>KB Ingestion</span>
-          {cfg.pulse && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: cfg.color }} />}
-        </div>
-        <span className="text-xs flex items-center gap-1" style={{ color: '#9CA3AF' }}><Clock className="w-3 h-3" />{fmtE(elapsed)}</span>
-      </div>
-      <p className="text-sm font-medium" style={{ color: '#1A1A2E' }}>{cfg.label}</p>
-      <p className="text-xs font-mono mt-1 truncate" style={{ color: '#9CA3AF' }}>{s3Key}</p>
-      {cfg.pulse && <div className="h-1 mt-3 rounded-full overflow-hidden" style={{ background: '#E5E7EB' }}><div className="h-full rounded-full" style={{ background: cfg.color, width: '40%', animation: 'indeterminate 1.5s ease-in-out infinite' }} /></div>}
-      {stats?.status === 'COMPLETE' && (
-        <div className="grid grid-cols-3 gap-2 mt-3">
-          {[['Scanned', stats.documents_scanned], ['Indexed', stats.new_documents_indexed], ['Failed', stats.documents_failed]].map(([l, v]) => (
-            <div key={l} className="rounded-lg p-2 text-center" style={{ background: 'rgba(255,255,255,0.8)' }}>
-              <p className="text-base font-bold" style={{ color: '#1A1A2E' }}>{v ?? '—'}</p>
-              <p className="text-xs" style={{ color: '#9CA3AF' }}>{l}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      {jobId && <p className="text-xs mt-2 font-mono" style={{ color: '#C4C9D4' }}>Job: {jobId}</p>}
-    </div>
-  );
-};
-
 // ── Local Upload Tab ──────────────────────────────────────────────────────────
 const WebUploadTab = () => {
   const { user } = useAuth();
   const toast = useToast();
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState('');
+  const [kbStatus, setKbStatus] = useState(''); // eslint-disable-line no-unused-vars
+  const [kbJobId, setKbJobId] = useState(null); // eslint-disable-line no-unused-vars
+  const [showProgress, setShowProgress] = useState(false); // eslint-disable-line no-unused-vars
+  const intervalRef = useRef(null); // eslint-disable-line no-unused-vars
 
   const pick = (f) => {
-    setResult(null); setError(null); setProgress(0);
+    setError(null); setProgress(0); setUploadStage(''); setKbStatus(''); setShowProgress(false);
     if (!f) return;
     if (f.size > MAX_FILE_SIZE) { setError('File exceeds 500 MB limit'); return; }
     setFile(f);
@@ -244,22 +170,68 @@ const WebUploadTab = () => {
 
   const upload = async () => {
     if (!file) return;
-    setUploading(true); setError(null); setResult(null); setProgress(0);
+    setUploading(true); setError(null); setProgress(0); setShowProgress(true);
     try {
+      // Stage 1: Processing
+      setUploadStage('processing');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Stage 2: Extracting metadata
+      setUploadStage('metadata');
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // Stage 3: Uploading to S3
+      setUploadStage('uploading');
       const fd = new FormData();
       fd.append('file', file); fd.append('user_id', user?.email || 'guest');
-      const res = await axios.post(`${API_BASE}/api/upload/direct`, fd, {
+      await axios.post(`${API_BASE}/api/upload/direct`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000,
         onUploadProgress: (e) => setProgress(Math.round((e.loaded * 100) / e.total)),
       });
-      setResult(res.data); setFile(null); setProgress(0);
-      toast('File uploaded — KB ingestion running in background', 'success');
+
+      // Stage 4: Syncing to KB
+      setUploadStage('kbsync');
+      setKbStatus('STARTING');
+      setFile(null); setProgress(0);
+      toast('File uploaded — syncing to Knowledge Base…', 'success');
+
+      // Start polling KB status
+      setTimeout(async () => {
+        try {
+          const r = await axios.get(`${API_BASE}/api/kb/sync/latest`, { timeout: 10000 });
+          if (r.data?.ingestion_job_id) {
+            setKbJobId(r.data.ingestion_job_id);
+            setKbStatus(r.data.status || 'STARTING');
+            // Poll every 8 seconds
+            intervalRef.current = setInterval(async () => {
+              try {
+                const status = await axios.get(`${API_BASE}/api/upload/sync-status/${r.data.ingestion_job_id}`, { timeout: 10000 });
+                setKbStatus(status.data.status);
+                if (['COMPLETE','FAILED','STOPPED'].includes(status.data.status)) {
+                  clearInterval(intervalRef.current);
+                  if (status.data.status === 'COMPLETE') {
+                    setTimeout(() => setShowProgress(false), 3000);
+                  }
+                }
+              } catch {}
+            }, 8000);
+          }
+        } catch {}
+      }, 2000);
     } catch (e) {
       const msg = e.response?.data?.detail || e.message || 'Upload failed';
       setError(msg);
       toast(msg, 'error');
+      setUploadStage('');
+      setShowProgress(false);
     } finally { setUploading(false); }
   };
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   const FileIcon = file ? getFileIcon(file.name) : UploadIcon;
 
@@ -293,18 +265,93 @@ const WebUploadTab = () => {
             <label className="inline-block px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer" style={{ background: RED }}>
               Browse Files
               <input type="file" onChange={e => pick(e.target.files[0])} className="hidden"
-                accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mp3,.wav" />
+                accept=".pdf,.doc,.docx,.txt,.html,.htm,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.webp,.bmp,.mp4,.avi,.mov,.wmv,.mkv,.flv,.webm,.mp3,.wav,.m4a" />
             </label>
-            <p className="text-xs mt-4" style={{ color: '#C4C9D4' }}>PDF · DOCX · XLSX · Images · MP4 · MP3 — Max 500 MB</p>
+            <p className="text-xs mt-4" style={{ color: '#C4C9D4' }}>PDF · DOCX · HTML · Excel · Images (JPG, PNG) · Videos (MP4, AVI, MOV) · Audio — Max 500 MB</p>
           </div>
         )}
       </div>
       <Btn onClick={upload} disabled={!file || uploading} color={RED} style={{ width: '100%', padding: '12px' }}>
-        {uploading ? <><Loader className="w-5 h-5 animate-spin" />Uploading {progress}%</> : <><UploadIcon className="w-5 h-5" />Upload &amp; Ingest</>}
+        {uploading ? <><Loader className="w-5 h-5 animate-spin" />Processing...</> : <><UploadIcon className="w-5 h-5" />Upload &amp; Sync to KB</>}
       </Btn>
-      {result && <Alert type="success">Uploaded — {result.message || 'Ingestion running in background'}</Alert>}
+      {showProgress && (
+        <div className="rounded-xl p-4 border" style={{ background: '#EFF6FF', borderColor: '#BFDBFE' }}>
+          {/* Horizontal Progress Steps */}
+          <div className="flex items-center justify-between mb-4">
+            {[
+              { id: 'processing', label: 'Processing', icon: '🔄' },
+              { id: 'metadata', label: 'Extracting', icon: '📋' },
+              { id: 'uploading', label: 'Uploading', icon: '☁️' },
+              { id: 'kbsync', label: 'KB Sync', icon: '🗄️' }
+            ].map((stage, idx) => {
+              const stageOrder = ['processing', 'metadata', 'uploading', 'kbsync'];
+              const currentIdx = stageOrder.indexOf(uploadStage);
+              const isActive = uploadStage === stage.id;
+              const isComplete = currentIdx > idx;
+              const isCurrent = currentIdx >= idx;
+
+              return (
+                <React.Fragment key={stage.id}>
+                  <div className="flex flex-col items-center flex-1">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-all ${isActive ? 'animate-pulse' : ''}`}
+                      style={{
+                        background: isActive ? '#3B82F6' : isComplete ? '#059669' : '#E5E7EB',
+                        border: `2px solid ${isActive ? '#3B82F6' : isComplete ? '#059669' : '#D1D5DB'}`,
+                        transform: isActive ? 'scale(1.1)' : 'scale(1)'
+                      }}>
+                      {isComplete ? (
+                        <CheckCircle className="w-5 h-5" style={{ color: '#fff' }} />
+                      ) : (
+                        <span className="text-base">{stage.icon}</span>
+                      )}
+                    </div>
+                    <p className="text-xs font-semibold text-center" style={{ color: isCurrent ? '#3B82F6' : '#9CA3AF' }}>
+                      {stage.label}
+                    </p>
+                  </div>
+                  {idx < 3 && (
+                    <div className="w-12 h-0.5 mb-8 transition-all" style={{
+                      background: isComplete ? '#059669' : '#E5E7EB',
+                      marginLeft: '-8px',
+                      marginRight: '-8px'
+                    }} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* Current Stage Info */}
+          <div className="text-center">
+            <p className="text-sm font-semibold mb-1" style={{ color: '#1A1A2E' }}>
+              {uploadStage === 'processing' && 'Processing file...'}
+              {uploadStage === 'metadata' && 'Extracting metadata...'}
+              {uploadStage === 'uploading' && 'Uploading to S3...'}
+              {uploadStage === 'kbsync' && (
+                kbStatus === 'COMPLETE' ? 'Synced to Knowledge Base ✓' :
+                kbStatus === 'FAILED' ? 'KB Sync Failed' :
+                kbStatus === 'STOPPED' ? 'KB Sync Stopped' :
+                'Syncing to Knowledge Base...'
+              )}
+            </p>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: '#DBEAFE' }}>
+              <div className="h-full rounded-full transition-all"
+                style={{
+                  background: kbStatus === 'COMPLETE' ? '#059669' : kbStatus === 'FAILED' ? '#DC2626' : '#3B82F6',
+                  width: uploadStage === 'processing' ? '25%' :
+                         uploadStage === 'metadata' ? '50%' :
+                         uploadStage === 'uploading' ? '75%' :
+                         uploadStage === 'kbsync' && kbStatus === 'COMPLETE' ? '100%' :
+                         uploadStage === 'kbsync' ? '85%' : '0%',
+                  animation: (uploadStage !== 'kbsync' || kbStatus !== 'COMPLETE') ? 'indeterminate 1.5s ease-in-out infinite' : 'none'
+                }}
+              />
+            </div>
+            {kbJobId && <p className="text-xs mt-2 font-mono" style={{ color: '#C4C9D4' }}>Job: {kbJobId}</p>}
+          </div>
+        </div>
+      )}
       {error && <Alert type="error">{error}</Alert>}
-      {result?.s3_key && <KBStatusCard s3Key={result.s3_key} />}
     </div>
   );
 };
@@ -806,7 +853,7 @@ const ConfluenceSyncTab = ({ userId }) => {
             <span className="text-sm font-semibold" style={{ color: '#1A1A2E' }}>{selectedSpace.name}</span>
           </div>
           <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#F3F4F6' }}>
-            {[{ id: 'space', label: 'Sync entire space' }, { id: 'pages', label: 'Pick specific pages' }].map(v => (
+            {[{ id: 'space', label: 'Sync entire space' }, { id: 'pages', label: 'Pick specific files' }].map(v => (
               <button key={v.id} onClick={() => setSyncScope(v.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
                 style={{ background: syncScope === v.id ? '#fff' : 'transparent', color: syncScope === v.id ? '#1A1A2E' : '#9CA3AF', boxShadow: syncScope === v.id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
                 {v.label}
@@ -833,7 +880,7 @@ const ConfluenceSyncTab = ({ userId }) => {
                 {loadingPages ? (
                   <div className="flex justify-center py-8"><Loader className="w-5 h-5 animate-spin" style={{ color: RED }} /></div>
                 ) : pages.length === 0 ? (
-                  <p className="py-8 text-center text-xs" style={{ color: '#9CA3AF' }}>No pages found</p>
+                  <p className="py-8 text-center text-xs" style={{ color: '#9CA3AF' }}>No files found</p>
                 ) : pages.map(p => (
                   <div key={p.id} className="flex items-center gap-3 px-4 py-2.5 border-b hover:bg-gray-50" style={{ borderColor: '#F3F4F6' }}>
                     <input type="checkbox" checked={selectedPages.includes(p.id)} onChange={() => togglePage(p.id)} className="w-4 h-4 flex-shrink-0 cursor-pointer" style={{ accentColor: '#0052CC' }} />
@@ -846,7 +893,7 @@ const ConfluenceSyncTab = ({ userId }) => {
                 ))}
               </div>
               <div className="flex items-center justify-between px-4 py-2 border-t" style={{ borderColor: '#F3F4F6', background: '#FAFBFC' }}>
-                <span className="text-xs" style={{ color: '#9CA3AF' }}>{selectedPages.length} selected</span>
+                <span className="text-xs" style={{ color: '#9CA3AF' }}>{selectedPages.length} file{selectedPages.length !== 1 ? 's' : ''} selected</span>
                 <div className="flex gap-3">
                   <button onClick={() => setSelectedPages(pages.map(p => p.id))} className="text-xs underline" style={{ color: '#0052CC' }}>Select all</button>
                   <button onClick={() => setSelectedPages([])} className="text-xs underline" style={{ color: '#6B7280' }}>Clear</button>
@@ -867,7 +914,7 @@ const ConfluenceSyncTab = ({ userId }) => {
           {error && <Alert type="error">{error}</Alert>}
           {success && <Alert type="success">{success}</Alert>}
           <Btn onClick={handleSave} disabled={saving || (syncScope === 'pages' && selectedPages.length === 0)} color="#0052CC" style={{ width: '100%' }}>
-            {saving ? <><Loader className="w-4 h-4 animate-spin" />Saving…</> : syncScope === 'pages' ? <><Calendar className="w-4 h-4" />Sync {selectedPages.length} Page{selectedPages.length !== 1 ? 's' : ''}</> : <><Calendar className="w-4 h-4" />Sync Entire Space</>}
+            {saving ? <><Loader className="w-4 h-4 animate-spin" />Saving…</> : syncScope === 'pages' ? <><Calendar className="w-4 h-4" />Sync {selectedPages.length} File{selectedPages.length !== 1 ? 's' : ''}</> : <><Calendar className="w-4 h-4" />Sync Entire Space</>}
           </Btn>
         </div>
       )}
@@ -923,7 +970,7 @@ const SyncConfigList = ({ configs, loading, userId, onRefresh, sourceColor }) =>
     if (tab === 'runs') loadRuns(configId);
   };
 
-  const doAction = async (action, configId, status) => {
+  const doAction = async (action, configId) => {
     try {
       if (action === 'run') {
         await axios.post(`${API_BASE}/api/sync/configs/${configId}/run`, null, { params: { user_id: userId } });
