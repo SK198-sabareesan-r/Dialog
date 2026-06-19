@@ -29,6 +29,22 @@ export const AuthProvider = ({ children }) => {
   const [driveToken, setDriveToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshDriveToken = useCallback(async (currentJwt) => {
+    try {
+      const res = await axios.post(`${API_BASE}/api/auth/refresh-drive-token`, {
+        jwt_token: currentJwt || localStorage.getItem('auth_token'),
+      });
+      const newJwt = res.data.token;
+      localStorage.setItem('auth_token', newJwt);
+      setToken(newJwt);
+      setDriveToken(res.data.drive_token);
+      return res.data.drive_token;
+    } catch (err) {
+      console.warn('Drive token refresh failed:', err);
+      return null;
+    }
+  }, []);
+
   // Load token from localStorage on mount
   useEffect(() => {
     const storedToken = localStorage.getItem('auth_token');
@@ -70,22 +86,6 @@ export const AuthProvider = ({ children }) => {
     }
     setLoading(false);
   }, [refreshDriveToken]);
-
-  const refreshDriveToken = useCallback(async (currentJwt) => {
-    try {
-      const res = await axios.post(`${API_BASE}/api/auth/refresh-drive-token`, {
-        jwt_token: currentJwt || localStorage.getItem('auth_token'),
-      });
-      const newJwt = res.data.token;
-      localStorage.setItem('auth_token', newJwt);
-      setToken(newJwt);
-      setDriveToken(res.data.drive_token);
-      return res.data.drive_token;
-    } catch (err) {
-      console.warn('Drive token refresh failed:', err);
-      return null;
-    }
-  }, []);
 
   const login = (jwtToken) => {
     try {
